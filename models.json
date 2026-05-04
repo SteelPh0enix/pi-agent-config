@@ -17,8 +17,24 @@
             },
             "models": [
                 {
-                    "id": "qwen-mid-coder-instruct",
+                    "id": "coder",
                     "name": "Qwen 3.6 MoE",
+                    "reasoning": false,
+                    "input": [
+                        "text"
+                    ],
+                    "contextWindow": 262144,
+                    "maxTokens": 32768,
+                    "cost": {
+                        "input": 0,
+                        "output": 0,
+                        "cacheRead": 0,
+                        "cacheWrite": 0
+                    }
+                },
+                {
+                    "id": "qwen-mid-instruct-uncensored",
+                    "name": "Qwen 3.6 MoE (Abliterated)",
                     "reasoning": false,
                     "input": [
                         "text"
