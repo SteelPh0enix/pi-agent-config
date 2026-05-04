@@ -1,0 +1,20 @@
+{
+  "lastChangelogVersion": "0.72.1",
+  "defaultProvider": "llama-cpp",
+  "defaultThinkingLevel": "high",
+  "enableSkillCommands": true,
+  "enableInstallTelemetry": false,
+  "retry": {
+    "maxRetries": 5,
+    "baseDelayMs": 10000,
+    "provider": {
+      "maxRetryDelayMs": 160000
+    }
+  },
+  "terminal": {
+    "showTerminalProgress": true
+  },
+  "transport": "auto",
+  "treeFilterMode": "default",
+  "defaultModel": "qwen-mid-coder-instruct"
+}
