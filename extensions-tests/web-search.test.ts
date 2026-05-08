@@ -1,5 +1,5 @@
 /**
- * Tests for searxng-search extension.
+ * Tests for web-search extension.
  *
  * Two suites:
  *   1. Library tests — pure unit tests on searxng-lib (formatResults, formatImageResults)
@@ -14,7 +14,7 @@ import {
   searxngSearch,
   SEARXNG_BASE_URL,
   SEARCH_TIMEOUT_MS,
-} from "../extensions/searxng-search/searxng-lib";
+} from "../extensions/web-search/searxng-lib";
 
 // ---------------------------------------------------------------------------
 // 1. Library — formatResults unit tests
