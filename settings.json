@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.73.0",
+  "lastChangelogVersion": "0.74.0",
   "defaultProvider": "llama-cpp",
   "defaultThinkingLevel": "high",
   "enableSkillCommands": true,
@@ -16,5 +16,5 @@
   },
   "transport": "auto",
   "treeFilterMode": "default",
-  "defaultModel": "coder"
+  "defaultModel": "coder-smart-reasoning"
 }
