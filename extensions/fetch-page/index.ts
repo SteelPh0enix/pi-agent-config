@@ -105,13 +105,15 @@ const fetchTextTool = defineTool({
   async execute(_toolCallId, params) {
     const { url } = coerceUrlParams(params);
     const result = await fetchPage({ url });
+    const output = formatTextResult(result);
     return {
-      content: [{ type: "text", text: formatTextResult(result) }],
+      content: [{ type: "text", text: output }],
       details: {
         statusCode: result.statusCode,
         contentType: result.contentType,
         finalUrl: result.finalUrl,
-        textLength: result.html.length,
+        rawSizeBytes: result.html.length,
+        textLength: output.length,
       },
     };
   },

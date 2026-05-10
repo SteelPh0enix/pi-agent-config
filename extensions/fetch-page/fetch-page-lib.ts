@@ -100,40 +100,30 @@ export function normalizeUrl(raw: string): string {
 // Text extraction (no external dependencies)
 // ---------------------------------------------------------------------------
 
-/**
- * Strips HTML tags, script/style blocks, and normalizes whitespace
- * to produce clean plain text from an HTML document.
+const BLOCK_TAGS = [
+  "div", "p", "br", "hr", "section", "article", "aside",
+  "header", "footer", "nav", "main", "ul", "ol", "li",
+  "table", "tr", "td", "th", "thead", "tbody", "tfoot",
+  "h1", "h2", "h3", "h4", "h5", "h6",
+  "blockquote", "pre", "figure", "figcaption",
+  "details", "summary", "dl", "dt", "dd",
+];
+
+// Precompile block tag regexes (open, close, self-closing) at module load time.
+// Each tag produces three patterns to avoid recompiling on every call.
+const BLOCK_TAG_REGEXES = BLOCK_TAGS.flatMap((tag) => [
+  new RegExp(`</${tag}>`, "gi"),   // close tag first (avoids partial matches)
+  new RegExp(`<${tag}[^>]*/\s*>`, "gi"),  // self-closing: <br/>, <hr/>
+  new RegExp(`<${tag}[^>]*>`, "gi"),      // open tag
+]);
+
+const ENTITY_REGEXES = buildEntityRegexes();
+
+/** Build [{ regex, char }] entries for named HTML entities.
+ * &amp; is handled separately to avoid double-decoding.
  */
-export function htmlToText(html: string): string {
-  let text = html;
-
-  // Remove <script> and <style> blocks (including their contents)
-  text = text.replace(/<script[\s\S]*?<\/script>/gi, "");
-  text = text.replace(/<style[\s\S]*?<\/style>/gi, "");
-
-  // Remove HTML comments
-  text = text.replace(/<!--[\s\S]*?-->/g, "");
-
-  // Replace block-level open/close tags with newlines, preserving inner content
-  const blockTags = [
-    "div", "p", "br", "hr", "section", "article", "aside",
-    "header", "footer", "nav", "main", "ul", "ol", "li",
-    "table", "tr", "td", "th", "thead", "tbody", "tfoot",
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "blockquote", "pre", "figure", "figcaption",
-    "details", "summary", "dl", "dt", "dd",
-  ];
-  for (const tag of blockTags) {
-    text = text.replace(new RegExp(`<${tag}[^>]*>`, "gi"), "\n");
-    text = text.replace(new RegExp(`</${tag}>`, "gi"), "\n");
-    // Self-closing or empty block tags
-    text = text.replace(new RegExp(`<${tag}[^>]*/>`, "gi"), "\n");
-  }
-
-  // Decode common HTML entities.
-  // Non-&amp; entities are decoded first; &amp; is decoded last
-  // (otherwise the & produced would break other entity references).
-  const nonAmpEntities: Record<string, string> = {
+function buildEntityRegexes() {
+  const map: Record<string, string> = {
     "&lt;": "<",
     "&gt;": ">",
     "&quot;": '"',
@@ -149,25 +139,57 @@ export function htmlToText(html: string): string {
     "&rdquo;": '"',
     "&bull;": "\u2022",
   };
+  return Object.entries(map).map(([entity, char]) => ({
+    regex: new RegExp(escapeRegExp(entity), "gi"),
+    char,
+  }));
+}
 
-  // First pass: decode all non-&amp; entities
-  for (const [entity, char] of Object.entries(nonAmpEntities)) {
-    const regex = new RegExp(entity.replace(/[.+*?^${}()|[\]\\]/g, "\\$&"), "gi");
+function escapeRegExp(s: string): string {
+  return s.replace(/[.+*?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Decode all common HTML named/numeric entities in a string.
+ * Handles &amp; last to avoid double-decoding.
+ */
+export function decodeHtmlEntities(text: string): string {
+  // Named entities (non-&amp;)
+  for (const { regex, char } of ENTITY_REGEXES) {
     text = text.replace(regex, char);
   }
-
-  // Last pass: decode &amp; → & (must be last!)
+  // &amp; → & last
   text = text.replace(/&amp;/gi, "&");
-
-  // Decode numeric entities (&#65; and &#x41;)
+  // Numeric entities (&#65; and &#x41;)
   text = text.replace(/&#([0-9]+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
   text = text.replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
+  return text;
+}
+
+/**
+ * Strips HTML tags, script/style blocks, and normalizes whitespace
+ * to produce clean plain text from an HTML document.
+ */
+export function htmlToText(html: string): string {
+  let text = html;
+
+  // Remove <script> and <style> blocks (including their contents)
+  text = text.replace(/<script[\s\S]*?<\/script>/gi, "");
+  text = text.replace(/<style[\s\S]*?<\/style>/gi, "");
+
+  // Remove HTML comments
+  text = text.replace(/<!--[\s\S]*?-->/g, "");
+
+  // Replace block-level tags with newlines (uses precompiled regexes)
+  for (const regex of BLOCK_TAG_REGEXES) {
+    text = text.replace(regex, "\n");
+  }
+
+  // Decode HTML entities
+  text = decodeHtmlEntities(text);
 
   // Remove remaining tags (e.g., <a>, <img>, etc.)
   text = text.replace(/<[^>]+>/g, "");
-
-  // Remove attribute values from any leftover tags
-  text = text.replace(/\s+(href|src|alt|class|id|data-[\w-]*)="[^"]*"/gi, " ");
 
   // Replace newlines and tabs with spaces
   text = text.replace(/[\t\r\n]+/g, "\n");
@@ -200,32 +222,13 @@ export function htmlToText(html: string): string {
 export function extractTitle(html: string): string {
   const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   if (match) {
-    let title = match[1].trim();
-    // Decode basic entities in title
-    const titleEntities: Record<string, string> = {
-      "&lt;": "<",
-      "&gt;": ">",
-      "&#39;": "'",
-      "&apos;": "'",
-      "&quot;": '"',
-      "&nbsp;": " ",
-    };
-    for (const [entity, char] of Object.entries(titleEntities)) {
-      const regex = new RegExp(entity.replace(/[.+*?^${}()|[\]\\]/g, "\\$&"), "gi");
-      title = title.replace(regex, char);
-    }
-    // Decode &amp; last
-    title = title.replace(/&amp;/gi, "&");
-    // Decode numeric entities
-    title = title.replace(/&#([0-9]+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
-    title = title.replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
-    return title;
+    return decodeHtmlEntities(match[1].trim());
   }
   // Fallback: try to extract from <meta> tags
   const metaTitleMatch = html.match(
     /<meta\s+(?:name|property)="(?:og:title|title)[^"]*"\s+content="([^"]*)"/i,
   );
-  if (metaTitleMatch) return metaTitleMatch[1].trim();
+  if (metaTitleMatch) return decodeHtmlEntities(metaTitleMatch[1].trim());
   return "(no title found)";
 }
 

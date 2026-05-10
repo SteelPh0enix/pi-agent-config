@@ -1,20 +1,20 @@
 /**
- * Pure library code for SearXNG search integration.
+ * Pure library code for web search integration.
  *
- * Extracted from searxng-search.ts so it can be unit-tested independently
- * without needing Pi's runtime (no ExtensionAPI, defineTool, etc.).
+ * Handles all HTTP calls and result formatting independently of Pi's runtime
+ * (no ExtensionAPI, defineTool, etc.).
  */
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-export const SEARXNG_BASE_URL = "https://search.steelph0enix.dev";
+export const SEARCH_BASE_URL = "https://search.steelph0enix.dev";
 export const SEARCH_TIMEOUT_MS = 15_000;
 
 // ---------------------------------------------------------------------------
 // Search API
 // ---------------------------------------------------------------------------
-export interface SearXNGSearchResult {
+export interface SearchResult {
   title: string;
   url: string;
   content: string;
@@ -23,29 +23,28 @@ export interface SearXNGSearchResult {
   [key: string]: unknown;
 }
 
-export interface SearXNGSearchParams {
+export interface SearchParams {
   query: string;
   engines?: string;
   categories?: string;
 }
 
 /**
- * Fetches search results from the SearXNG instance.
+ * Fetches search results from the web search backend.
  * Throws on HTTP errors and network failures.
  */
-export async function searxngSearch(
-  params: SearXNGSearchParams,
+export async function webSearch(
+  params: SearchParams,
   opts?: { timeoutMs?: number },
-): Promise<{ results: SearXNGSearchResult[]; totalEstimated: string }> {
+): Promise<{ results: SearchResult[]; totalEstimated: string }> {
   const { query } = params;
   const timeout = opts?.timeoutMs ?? SEARCH_TIMEOUT_MS;
 
-  const url = new URL(`${SEARXNG_BASE_URL}/search`);
+  const url = new URL(`${SEARCH_BASE_URL}/search`);
   url.searchParams.set("q", query);
   url.searchParams.set("format", "json");
   url.searchParams.set("pageno", "1");
   url.searchParams.set("safesearch", "0");
-  // Do NOT set engines here — let SearXNG use its instance-level defaults.
   if (params.engines) {
     url.searchParams.set("engines", params.engines);
   }
@@ -63,23 +62,29 @@ export async function searxngSearch(
     clearTimeout(timer);
 
     if (!response.ok) {
-      throw new Error(`SearXNG HTTP ${response.status}: ${response.statusText}`);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await response.json() as Record<string, any>;
     const results = Array.isArray(data["results"]) ? (data["results"] as unknown[]) : [];
+
+    // number_of_results can be 0 for some categories (news, images) even when
+    // results are returned. Use the actual result count as a lower bound.
+    const rawTotal = data["number_of_results"] !== undefined
+      ? Number(data["number_of_results"])
+      : NaN;
     const estimated = String(
-      data["number_of_results"] !== undefined
-        ? data["number_of_results"]
-        : results.length,
+      !Number.isFinite(rawTotal) || rawTotal < results.length
+        ? results.length
+        : rawTotal,
     );
 
-    return { results: results as SearXNGSearchResult[], totalEstimated: estimated };
+    return { results: results as SearchResult[], totalEstimated: estimated };
   } catch (err: unknown) {
     clearTimeout(timer);
     const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`SearXNG search failed: ${message}`);
+    throw new Error(`Search failed: ${message}`);
   }
 }
 
@@ -88,7 +93,7 @@ export async function searxngSearch(
  */
 export function formatResults(
   query: string,
-  results: SearXNGSearchResult[],
+  results: SearchResult[],
   totalEstimated: string,
 ): string {
   const items = results.slice(0, 10).map((r, i) => {
@@ -122,7 +127,7 @@ export function formatResults(
  */
 export function formatImageResults(
   query: string,
-  results: SearXNGSearchResult[],
+  results: SearchResult[],
 ): string {
   const items = results.slice(0, 10).map((r, i) => {
     const title = r.title ?? "(no title)";

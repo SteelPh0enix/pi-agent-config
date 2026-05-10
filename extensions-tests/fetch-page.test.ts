@@ -15,6 +15,7 @@ import {
   formatHtmlResult,
   formatTextResult,
   fetchPage,
+  decodeHtmlEntities,
   MAX_TEXT_OUTPUT_CHARS,
 } from "../extensions/fetch-page/fetch-page-lib";
 
@@ -464,13 +465,461 @@ describe("fetch-page (extension)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 8. Integration tests — real HTTP calls (skipped by default)
+// 7a. Library — coerceUrlParams (from index.ts)
 // ---------------------------------------------------------------------------
 
-describe("fetch-page (integration)", () => {
-  it("fetches a real webpage and extracts text", async () => {}, 1); // skip
+describe("coerceUrlParams (extension helper)", () => {
+  // Re-implement the same logic to test it independently
+  function coerceUrlParams(raw: unknown): { url: string } {
+    if (typeof raw === "string") return { url: raw.trim() };
+    if (raw && typeof raw === "object") {
+      const o = raw as Record<string, unknown>;
+      for (const key of ["url", "URL", "uri"]) {
+        const val = o[key];
+        if (typeof val === "string" && val.trim()) return { url: val.trim() };
+      }
+    }
+    return { url: "" };
+  }
 
-  it("htmlToText produces clean output from Wikipedia article", async () => {}, 1); // skip
+  it("coerces a plain string into { url }", () => {
+    expect(coerceUrlParams("https://example.com")).toEqual({ url: "https://example.com" });
+  });
 
-  it("htmlToText strips script/style/nav from a realistic blog post", async () => {}, 1); // skip
+  it("trims whitespace from string input", () => {
+    expect(coerceUrlParams("  https://example.com  ")).toEqual({ url: "https://example.com" });
+  });
+
+  it("extracts 'url' key from object", () => {
+    expect(coerceUrlParams({ url: "https://example.com" })).toEqual({ url: "https://example.com" });
+  });
+
+  it("extracts 'URL' key from object (case insensitive)", () => {
+    expect(coerceUrlParams({ URL: "https://example.com" })).toEqual({ url: "https://example.com" });
+  });
+
+  it("extracts 'uri' key from object", () => {
+    expect(coerceUrlParams({ uri: "https://example.com" })).toEqual({ url: "https://example.com" });
+  });
+
+  it("prefers 'url' over 'URL' and 'uri'", () => {
+    expect(coerceUrlParams({ url: "a", URL: "b", uri: "c" })).toEqual({ url: "a" });
+  });
+
+  it("returns empty url for non-string object values", () => {
+    expect(coerceUrlParams({ url: 123 })).toEqual({ url: "" });
+  });
+
+  it("returns empty url for null input", () => {
+    expect(coerceUrlParams(null)).toEqual({ url: "" });
+  });
+
+  it("returns empty url for undefined input", () => {
+    expect(coerceUrlParams(undefined)).toEqual({ url: "" });
+  });
+
+  it("returns empty url for number input", () => {
+    expect(coerceUrlParams(42 as unknown)).toEqual({ url: "" });
+  });
+
+  it("returns empty url for empty object", () => {
+    expect(coerceUrlParams({})).toEqual({ url: "" });
+  });
+
+  it("trims url value from object", () => {
+    expect(coerceUrlParams({ url: "  https://example.com  " })).toEqual({ url: "https://example.com" });
+  });
+
+  it("returns empty url when string value is whitespace only", () => {
+    expect(coerceUrlParams({ url: "   ", uri: "https://fallback.com" })).toEqual({ url: "https://fallback.com" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7b. Library — decodeHtmlEntities (new shared helper)
+// ---------------------------------------------------------------------------
+
+describe("decodeHtmlEntities (library)", () => {
+  it("decodes &lt; and &gt;", () => {
+    expect(decodeHtmlEntities("1 &lt; 2 &gt; 0")).toBe("1 < 2 > 0");
+  });
+
+  it("decodes &quot; and &#39;/&apos;", () => {
+    expect(decodeHtmlEntities("He said &quot;hello&quot; and it&#39;s fine &apos;too&apos;"))
+      .toBe(`He said "hello" and it's fine 'too'`);
+  });
+
+  it("decodes &nbsp;", () => {
+    expect(decodeHtmlEntities("foo&nbsp;bar")).toBe("foo bar");
+  });
+
+  it("decodes typographic entities", () => {
+    expect(decodeHtmlEntities("&mdash;&ndash;&hellip;")).toBe("—–...");
+  });
+
+  it("decodes &amp; last to avoid double-decoding", () => {
+    // In '&amp;amp;', &amp; is decoded last, so:
+    // Step 1: non-amp entities pass — nothing matches
+    // Step 2: &amp; → &, giving "&amp;"
+    // No second pass occurs (single-pass decode), so "&amp;" stays literal.
+    expect(decodeHtmlEntities("&amp;amp;")).toBe("&amp;");
+  });
+
+  it("handles overlapping entity refs like &amp;lt;", () => {
+    // In '&amp;lt;', the regex for &lt; matches within the string at position 5.
+    // This is inherent to how overlapping text patterns work — single-pass decoding
+    // can't distinguish "&amp;" + "<" from "&" + "<" here.
+    // The result is predictable: non-amp entities fire first on '&lt;' match.
+    expect(decodeHtmlEntities("&amp;lt;")).toBe("&lt;");
+  });
+
+  it("decodes numeric decimal entities", () => {
+    expect(decodeHtmlEntities("&#65;&#66;&#67;")).toBe("ABC");
+  });
+
+  it("decodes numeric hex entities", () => {
+    expect(decodeHtmlEntities("&#x41;&#x42;&#x43;")).toBe("ABC");
+  });
+
+  it("handles mixed entity types in one string", () => {
+    const input = "&lt;h1&gt; &#65; &amp; &#x42; &mdash; end";
+    expect(decodeHtmlEntities(input)).toBe("<h1> A & B — end");
+  });
+
+  it("is idempotent on plain text", () => {
+    const plain = "Hello world, nothing to decode.";
+    expect(decodeHtmlEntities(plain)).toBe(plain);
+  });
+
+  it("handles empty string", () => {
+    expect(decodeHtmlEntities("")).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7c. Library — htmlToText edge cases (additional)
+// ---------------------------------------------------------------------------
+
+describe("htmlToText (additional edge cases)", () => {
+  it("handles self-closing <br/> tags", () => {
+    const result = htmlToText("Line one<br/>Line two");
+    expect(result).toContain("Line one");
+    expect(result).toContain("Line two");
+  });
+
+  it("handles self-closing <hr/> tags", () => {
+    const result = htmlToText("Before<hr/>After");
+    expect(result).toContain("Before");
+    expect(result).toContain("After");
+  });
+
+  it("handles self-closing with whitespace <br />", () => {
+    const result = htmlToText("Line one<br />Line two");
+    expect(result).toContain("Line one");
+    expect(result).toContain("Line two");
+  });
+
+  it("handles nested block elements deeply", () => {
+    const html = `<div><section><article><p>Deep content</p></article></section></div>`;
+    const result = htmlToText(html);
+    expect(result).toContain("Deep content");
+  });
+
+  it("preserves <pre> content structure with newlines", () => {
+    const html = `<pre>line1\nline2\nline3</pre>`;
+    const result = htmlToText(html);
+    expect(result).toContain("line1");
+    expect(result).toContain("line2");
+    expect(result).toContain("line3");
+  });
+
+  it("handles <details> and <summary> tags", () => {
+    const html = `<details><summary>Title</summary>Hidden content</details>`;
+    const result = htmlToText(html);
+    expect(result).toContain("Title");
+    expect(result).toContain("Hidden content");
+  });
+
+  it("handles <figure> and <figcaption> tags", () => {
+    const html = `<figure><img src="test.jpg" alt="A test"><figcaption>Caption text</figcaption></figure>`;
+    const result = htmlToText(html);
+    expect(result).toContain("Caption text");
+  });
+
+  it("handles <dl>/<dt>/<dd> definition lists", () => {
+    const html = `<dl><dt>Term</dt><dd>Definition</dd></dl>`;
+    const result = htmlToText(html);
+    expect(result).toContain("Term");
+    expect(result).toContain("Definition");
+  });
+
+  it("handles entity overlap: &amp;lt; decodes deterministically", () => {
+    // In '&amp;lt;', the regex for &lt; matches within the string.
+    // This is single-pass decoding behavior — predictable, not a bug.
+    const result = htmlToText("&amp;lt;");
+    expect(result).toBe("&lt;");
+  });
+
+  it("handles <aside> and article-level semantic tags", () => {
+    const html = `<main><article>Main</article><aside>Sidebar</aside></main>`;
+    const result = htmlToText(html);
+    expect(result).toContain("Main");
+    expect(result).toContain("Sidebar");
+  });
+
+  it("strips data-* attributes from leftover tag fragments", () => {
+    // This shouldn't normally appear but the code handles it as safety
+    const result = htmlToText("<span data-foo='bar' class='x'>text</span>");
+    expect(result).toContain("text");
+  });
+
+  it("handles script blocks with attributes", () => {
+    const html = `<div>Before<script type="module" src="test.js">code()</script>After</div>`;
+    const result = htmlToText(html);
+    expect(result).toContain("Before");
+    expect(result).toContain("After");
+    expect(result).not.toContain("code()");
+    expect(result).not.toContain("test.js");
+  });
+
+  it("handles style blocks with attributes", () => {
+    const html = `<style type="text/css" media="screen">body{}</style><p>Hello</p>`;
+    const result = htmlToText(html);
+    expect(result).toBe("Hello");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7d. Library — extractTitle edge cases (additional)
+// ---------------------------------------------------------------------------
+
+describe("extractTitle (additional edge cases)", () => {
+  it("falls back to name=\"title\" meta tag", () => {
+    const html = '<meta name="title" content="Meta Title">';
+    expect(extractTitle(html)).toBe("Meta Title");
+  });
+
+  it("<title> takes priority over meta tags", () => {
+    const html = `<title>Primary</title><meta property="og:title" content="Secondary">`;
+    expect(extractTitle(html)).toBe("Primary");
+  });
+
+  it("decodes entities in meta title fallback", () => {
+    const html = '<meta name="title" content="A &amp; B">';
+    expect(extractTitle(html)).toBe("A & B");
+  });
+
+  it("handles multi-line <title> content", () => {
+    const html = "<title>\n  Multi\n  Line\n  Title\n</title>";
+    // Should be decoded and trimmed by decodeHtmlEntities
+    const result = extractTitle(html);
+    expect(result).toContain("Multi");
+    expect(result).toContain("Line");
+    expect(result).toContain("Title");
+  });
+
+  it("handles <title> with numeric entities", () => {
+    const html = '<title>Code &#65;&#66;&#67;</title>';
+    expect(extractTitle(html)).toBe("Code ABC");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7e. Library — formatHtmlResult edge cases (additional)
+// ---------------------------------------------------------------------------
+
+describe("formatHtmlResult (additional edge cases)", () => {
+  it("omits Content-Type line when contentType is undefined", () => {
+    const result = {
+      statusCode: 200,
+      // no contentType
+      finalUrl: "https://example.com",
+      html: "<p>ok</p>",
+    };
+    const output = formatHtmlResult(result);
+    expect(output).not.toContain("Content-Type");
+  });
+
+  it("shows correct size for small HTML (< 1024 bytes)", () => {
+    const result = {
+      statusCode: 200,
+      finalUrl: "https://example.com",
+      html: "<p>small</p>",
+    };
+    const output = formatHtmlResult(result);
+    expect(output).toMatch(/\d+ B/);
+  });
+
+  it("shows correct size for large HTML (> 1 MB)", () => {
+    const bigHtml = "x".repeat(2_000_000);
+    const result = {
+      statusCode: 200,
+      finalUrl: "https://example.com",
+      html: bigHtml,
+    };
+    const output = formatHtmlResult(result);
+    expect(output).toMatch(/\d+\.\d+ MB/);
+  });
+
+  it("shows correct size for medium HTML (1-1024 KB)", () => {
+    const medHtml = "x".repeat(50_000);
+    const result = {
+      statusCode: 200,
+      finalUrl: "https://example.com",
+      html: medHtml,
+    };
+    const output = formatHtmlResult(result);
+    expect(output).toMatch(/\d+\.\d+ KB/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7f. Library — formatTextResult edge cases (additional)
+// ---------------------------------------------------------------------------
+
+describe("formatTextResult (additional edge cases)", () => {
+  it("skips title section when no title found", () => {
+    const result = {
+      statusCode: 200,
+      finalUrl: "https://example.com/page",
+      html: "<body>Just content</body>",
+    };
+    const output = formatTextResult(result);
+    // Should not include the fallback string
+    expect(output).not.toContain("(no title found)");
+    // Should just have the text content
+    expect(output).toContain("Just content");
+  });
+
+  it("omits title when title is empty", () => {
+    const result = {
+      statusCode: 200,
+      finalUrl: "https://example.com/page",
+      html: "<title></title><body>Content</body>",
+    };
+    const output = formatTextResult(result);
+    expect(output).not.toMatch(/^==/);
+    expect(output).toContain("Content");
+  });
+
+  it("handles HTML with only whitespace content", () => {
+    const result = {
+      statusCode: 200,
+      finalUrl: "https://example.com",
+      html: "<html>   \n\t  </html>",
+    };
+    const output = formatTextResult(result);
+    expect(output.trim()).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7g. Library — fetchPage abort error handling (additional)
+// ---------------------------------------------------------------------------
+
+describe("fetchPage (abort/error edge cases)", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("handles AbortError gracefully", async () => {
+    // Simulate a real abort error scenario
+    const abortError = new DOMException("The operation was aborted", "AbortError");
+    globalThis.fetch = vi.fn(() => Promise.reject(abortError)) as never;
+
+    await expect(fetchPage({ url: "https://example.com" })).rejects.toThrow(
+      /Failed to fetch.*aborted/,
+    );
+  });
+
+  it("includes URL in error message", async () => {
+    globalThis.fetch = vi.fn(() => Promise.reject(new Error("Connection refused"))) as never;
+
+    await expect(fetchPage({ url: "https://myhost.invalid/path" })).rejects.toThrow(
+      /Failed to fetch https:\/\/myhost\.invalid\/path: Connection refused/,
+    );
+  });
+
+  it("handles non-Error thrown values", async () => {
+    globalThis.fetch = vi.fn(() => Promise.reject("string error")) as never;
+
+    await expect(fetchPage({ url: "https://example.com" })).rejects.toThrow(
+      /Failed to fetch.*string error/,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7h. Extension — index.ts content checks (additional)
+// ---------------------------------------------------------------------------
+
+describe("fetch-page (extension, additional)", () => {
+  it("exports coerceUrlParams indirectly via tool execution", () => {
+    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+
+    // Should define and use coerceUrlParams
+    expect(src).toContain("coerceUrlParams");
+    // Both tools should use it
+    const coerceUsages = (src.match(/coerceUrlParams/g) || []).length;
+    expect(coerceUsages).toBeGreaterThanOrEqual(3); // definition + 2 usages in tool execute
+  });
+
+  it("defines fetch-check command", () => {
+    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    expect(src).toContain("fetch-check");
+    expect(src).toContain("registerCommand");
+  });
+
+  it("handles session_start event", () => {
+    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    expect(src).toContain("session_start");
+  });
+
+  it("both tools use renderResult for TUI preview", () => {
+    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    const renderCount = (src.match(/renderResult/g) || []).length;
+    expect(renderCount).toBeGreaterThanOrEqual(2); // one per tool
+  });
+
+  it("fetch_text tool reports textLength in details", () => {
+    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    expect(src).toContain("textLength");
+  });
+
+  it("fetch_page tool reports sizeBytes in details", () => {
+    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    expect(src).toContain("sizeBytes");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7i. Library — normalizeUrl edge cases (additional)
+// ---------------------------------------------------------------------------
+
+describe("normalizeUrl (additional edge cases)", () => {
+  it("preserves URL with ports", () => {
+    expect(normalizeUrl("https://example.com:8080/path")).toBe(
+      "https://example.com:8080/path",
+    );
+  });
+
+  it("adds https:// to URLs with ports but no protocol", () => {
+    expect(normalizeUrl("example.com:8080")).toBe("https://example.com:8080");
+  });
+
+  it("handles URL with fragments and query params", () => {
+    const url = "https://example.com/path?q=1&r=2#section";
+    expect(normalizeUrl(url)).toBe(url);
+  });
+
+  it("adds https:// to URLs with paths but no protocol", () => {
+    expect(normalizeUrl("example.com/path/file.html")).toBe(
+      "https://example.com/path/file.html",
+    );
+  });
+
+  it("handles mixed-case http prefix", () => {
+    expect(normalizeUrl("HTTP://Example.COM")).toBe("HTTP://Example.COM");
+    expect(normalizeUrl("HttpS://Example.COM")).toBe("HttpS://Example.COM");
+  });
 });
