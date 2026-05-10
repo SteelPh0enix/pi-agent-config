@@ -18,7 +18,7 @@
             "models": [
                 {
                     "id": "coder",
-                    "name": "Qwen 3.6 MoE",
+                    "name": "Qwen 3.6 MoE (no reasoning)",
                     "reasoning": false,
                     "input": [
                         "text"
@@ -34,8 +34,40 @@
                 },
                 {
                     "id": "coder-smart",
-                    "name": "Qwen 3.6 Dense",
+                    "name": "Qwen 3.6 Dense (no reasoning)",
                     "reasoning": false,
+                    "input": [
+                        "text"
+                    ],
+                    "contextWindow": 262144,
+                    "maxTokens": 32768,
+                    "cost": {
+                        "input": 0,
+                        "output": 0,
+                        "cacheRead": 0,
+                        "cacheWrite": 0
+                    }
+                },
+                {
+                    "id": "coder-reasoning",
+                    "name": "Qwen 3.6 MoE (with reasoning)",
+                    "reasoning": true,
+                    "input": [
+                        "text"
+                    ],
+                    "contextWindow": 262144,
+                    "maxTokens": 32768,
+                    "cost": {
+                        "input": 0,
+                        "output": 0,
+                        "cacheRead": 0,
+                        "cacheWrite": 0
+                    }
+                },
+                {
+                    "id": "coder-smart-reasoning",
+                    "name": "Qwen 3.6 Dense (with reasoning)",
+                    "reasoning": true,
                     "input": [
                         "text"
                     ],
