@@ -10,16 +10,26 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["*.test.ts"],
+    include: ["extensions-tests/*.test.ts"],
     // Short timeout since most tests are mocked; longer for integration tests
     testTimeout: 30_000,
     hookTimeout: 15_000,
     coverage: {
-      enabled: true,
       provider: "v8",
-      include: ["**/extensions/fetch-page/**/*.ts"],
-      exclude: [],
-      reporter: ["text", "json", "html"],
+      include: [
+        "**/extensions/fetch-page/**/*.ts",
+        "**/extensions/web-search/**/*.ts",
+      ],
+      exclude: [
+        "**/index.ts",
+      ],
+      reporter: ["text", "text-summary", "json", "html"],
+      thresholds: {
+        lines: 95,
+        branches: 90,
+        functions: 95,
+        statements: 95,
+      },
     },
   },
 });

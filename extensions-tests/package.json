@@ -4,8 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "cd .. && vitest run --config extensions-tests/vitest.config.ts",
+    "test:watch": "cd .. && vitest --config extensions-tests/vitest.config.ts",
+    "coverage": "cd .. && vitest run --config extensions-tests/vitest.config.ts --coverage"
   },
   "keywords": [],
   "author": "",

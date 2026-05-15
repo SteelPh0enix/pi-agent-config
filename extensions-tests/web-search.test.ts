@@ -549,6 +549,31 @@ describe("search-lib (error messages)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 6b. Runtime coverage — getSearchBaseUrl error path & SEARCH_BASE_URL proxy
+// ---------------------------------------------------------------------------
+
+describe("search-lib (runtime coverage)", () => {
+  it("getSearchBaseUrl throws when PI_EXTENSION_SEARXNG_INSTANCE is unset", () => {
+    const saved = process.env.PI_EXTENSION_SEARXNG_INSTANCE;
+    delete process.env.PI_EXTENSION_SEARXNG_INSTANCE;
+    try {
+      expect(() => getSearchBaseUrl()).toThrow(/PI_EXTENSION_SEARXNG_INSTANCE/);
+    } finally {
+      process.env.PI_EXTENSION_SEARXNG_INSTANCE = saved;
+    }
+  });
+
+  it("SEARCH_BASE_URL proxy coerces to string in template literals", () => {
+    expect(`${SEARCH_BASE_URL}/search`).toContain("/search");
+  });
+
+  it("SEARCH_BASE_URL proxy supports .length", () => {
+    expect(typeof SEARCH_BASE_URL.length).toBe("number");
+    expect(SEARCH_BASE_URL.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 7. Integration tests — real calls against the live search backend
 // ---------------------------------------------------------------------------
 
