@@ -5,6 +5,12 @@
  *   1. Raw HTML — fetch a URL and return the unmodified HTML source.
  *   2. Text-only  — fetch a URL, strip all HTML tags & scripts/styles,
  *                  normalize whitespace, and return clean text content.
+ *
+ * Paging support:
+ *   Both tools support an `offset` parameter. When output exceeds
+ *   MAX_TEXT_OUTPUT_CHARS, a continuation marker is appended telling the
+ *   agent to call again with `offset=N`. Page data is cached in-memory
+ *   so offset-based chunks avoid re-fetching.
  */
 
 // ---------------------------------------------------------------------------
@@ -27,8 +33,35 @@ export interface FetchResult {
   html: string;
 }
 
-export interface FetchPageParams {
-  url: string;
+export interface CachedPage {
+  result: FetchResult;
+  /** Pre-computed plain text from htmlToText so offset chunks are cheap. */
+  text: string;
+}
+
+export interface FetchPageOptions {
+  timeoutMs?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Page cache — module-level, lives for the session lifetime
+// ---------------------------------------------------------------------------
+
+const pageCache = new Map<string, CachedPage>();
+
+/** Store a fetched page in the cache so offset-based chunking works. */
+function cachePage(normalizedUrl: string, result: FetchResult): void {
+  pageCache.set(normalizedUrl, { result, text: htmlToText(result.html) });
+}
+
+/** Retrieve a previously cached page by its normalized URL. */
+export function getCachedPage(normalizedUrl: string): CachedPage | undefined {
+  return pageCache.get(normalizedUrl);
+}
+
+/** Clear the page cache (used in tests). */
+export function clearCache(): void {
+  pageCache.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -36,14 +69,19 @@ export interface FetchPageParams {
 // ---------------------------------------------------------------------------
 
 /**
- * Fetches a URL and returns raw HTML.
+ * Fetches a URL and returns raw HTML + stores result in cache.
  * Follows up to 5 redirects automatically (fetch does this by default).
  */
 export async function fetchPage(
-  params: FetchPageParams,
-  opts?: { timeoutMs?: number },
+  rawUrl: string,
+  opts?: FetchPageOptions,
 ): Promise<FetchResult> {
-  const url = normalizeUrl(params.url);
+  const url = normalizeUrl(rawUrl);
+
+  // Serve from cache if available (offset-based continuation)
+  const cached = pageCache.get(url);
+  if (cached) return cached.result;
+
   const timeout = opts?.timeoutMs ?? FETCH_TIMEOUT_MS;
 
   const controller = new AbortController();
@@ -62,12 +100,15 @@ export async function fetchPage(
 
     const html = await response.text();
 
-    return {
+    const result: FetchResult = {
       statusCode: response.status,
       contentType: response.headers.get("content-type") ?? undefined,
       finalUrl: response.url,
       html,
     };
+
+    cachePage(url, result);
+    return result;
   } catch (err: unknown) {
     clearTimeout(timer);
     const message = err instanceof Error ? err.message : String(err);
@@ -113,7 +154,7 @@ const BLOCK_TAGS = [
 // Each tag produces three patterns to avoid recompiling on every call.
 const BLOCK_TAG_REGEXES = BLOCK_TAGS.flatMap((tag) => [
   new RegExp(`</${tag}>`, "gi"),   // close tag first (avoids partial matches)
-  new RegExp(`<${tag}[^>]*/\s*>`, "gi"),  // self-closing: <br/>, <hr/>
+  new RegExp(`<${tag}[^>]*/\\s*>`, "gi"),  // self-closing: <br/>, <hr/>
   new RegExp(`<${tag}[^>]*>`, "gi"),      // open tag
 ]);
 
@@ -238,43 +279,74 @@ export function extractTitle(html: string): string {
 
 /**
  * Formats a fetch result for display as raw HTML.
+ * When `offset` is provided, returns a chunk starting at that character position.
  */
-export function formatHtmlResult(result: FetchResult): string {
+export function formatHtmlResult(result: FetchResult, offset?: number): string {
+  const start = offset ?? 0;
+  const totalLen = result.html.length;
   const lines: string[] = [];
 
-  lines.push(`URL : ${result.finalUrl}`);
-  lines.push(`Status: ${result.statusCode}`);
-  if (result.contentType) lines.push(`Content-Type: ${result.contentType}`);
-  lines.push(`Size  : ${formatBytes(result.html.length)} (${result.html.length.toLocaleString()} chars)`);
-  lines.push("");
+  if (start === 0) {
+    lines.push(`URL : ${result.finalUrl}`);
+    lines.push(`Status: ${result.statusCode}`);
+    if (result.contentType) lines.push(`Content-Type: ${result.contentType}`);
+    lines.push(`Size  : ${formatBytes(totalLen)} (${totalLen.toLocaleString()} chars)`);
+    lines.push("");
+  } else {
+    lines.push(
+      `[Continuation from offset ${start.toLocaleString()} — total ${totalLen.toLocaleString()} chars]`,
+    );
+    lines.push("");
+  }
 
-  const truncated = result.html.length > MAX_TEXT_OUTPUT_CHARS
-    ? result.html.slice(0, MAX_TEXT_OUTPUT_CHARS)
-      + `\n\n... (truncated at ${MAX_TEXT_OUTPUT_CHARS} characters — total ${result.html.length.toLocaleString()} chars)\n`
-    : result.html;
+  const remaining = totalLen - start;
+  if (remaining > MAX_TEXT_OUTPUT_CHARS) {
+    const end = start + MAX_TEXT_OUTPUT_CHARS;
+    lines.push(result.html.slice(start, end));
+    lines.push("");
+    lines.push(
+      `... (truncated — ${end.toLocaleString()} / ${totalLen.toLocaleString()} chars — call again with offset=${end})`,
+    );
+  } else {
+    lines.push(result.html.slice(start));
+  }
 
-  lines.push(truncated);
   return lines.join("\n");
 }
 
 /**
  * Formats extracted text for display.
+ * When `offset` is provided, returns a chunk starting at that character position.
+ * When `cachedPage` is provided, uses pre-computed text to avoid re-processing.
  */
-export function formatTextResult(result: FetchResult): string {
-  const text = htmlToText(result.html);
+export function formatTextResult(
+  result: FetchResult,
+  offsetOrCached?: number | CachedPage,
+): string {
+  const cached: CachedPage | undefined =
+    typeof offsetOrCached === "object" ? offsetOrCached : undefined;
+  const offset: number = typeof offsetOrCached === "number" ? offsetOrCached : 0;
+
+  const text = cached?.text ?? htmlToText(result.html);
   let output = "";
 
-  const title = extractTitle(result.html);
-  if (title && title !== "(no title found)" && !result.finalUrl.includes(title)) {
-    output += `${title}\n`;
-    output += "=".repeat(title.length) + "\n\n";
+  if (offset === 0) {
+    const title = extractTitle(result.html);
+    if (title && title !== "(no title found)" && !result.finalUrl.includes(title)) {
+      output += `${title}\n`;
+      output += "=".repeat(title.length) + "\n\n";
+    }
+  } else {
+    output += `[Continuation from offset ${offset.toLocaleString()} — total ${text.length.toLocaleString()} chars]\n\n`;
   }
 
-  if (text.length > MAX_TEXT_OUTPUT_CHARS) {
-    output += text.slice(0, MAX_TEXT_OUTPUT_CHARS);
-    output += `\n\n... (truncated at ${MAX_TEXT_OUTPUT_CHARS} characters — total ${text.length.toLocaleString()} chars)\n`;
+  const remaining = text.length - offset;
+  if (remaining > MAX_TEXT_OUTPUT_CHARS) {
+    const end = offset + MAX_TEXT_OUTPUT_CHARS;
+    output += text.slice(offset, end);
+    output += `\n\n... (truncated — ${end.toLocaleString()} / ${text.length.toLocaleString()} chars — call again with offset=${end})\n`;
   } else {
-    output += text;
+    output += text.slice(offset);
   }
 
   return output;

@@ -6,6 +6,12 @@
  * Two tools:
  *   - fetch_page      — returns the raw HTML source of a URL
  *   - fetch_text       — extracts clean, readable text (no HTML tags)
+ *
+ * Paging support:
+ *   Both tools accept an optional `offset` parameter. When a page is
+ *   too large to return in one response, the output includes a
+ *   continuation marker with a suggested `offset` value. The agent
+ *   can call again with that offset to get the next chunk.
  */
 
 import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -15,14 +21,11 @@ import {
   fetchPage,
   formatHtmlResult,
   formatTextResult,
+  getCachedPage,
+  normalizeUrl,
   FETCH_TIMEOUT_MS,
   MAX_TEXT_OUTPUT_CHARS,
 } from "./fetch-page-lib";
-
-// ---------------------------------------------------------------------------
-// Helpers — delegated to fetch-page-lib.ts for testability
-// (fetchPage, formatHtmlResult, formatTextResult are imported above)
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Tool schemas
@@ -30,16 +33,22 @@ import {
 
 const fetchParams = Type.Object({
   url: Type.String({ description: "The URL of the webpage to fetch" }),
+  offset: Type.Optional(
+    Type.Number({ description: "Character offset for next chunk (if a previous call was truncated)" }),
+  ),
 });
 
-/** Coerce raw tool call args into a valid { url: string }. */
-function coerceUrlParams(raw: unknown): { url: string } {
+/** Coerce raw tool call args into { url: string; offset?: number }. */
+function coerceUrlParams(raw: unknown): { url: string; offset?: number } {
   if (typeof raw === "string") return { url: raw.trim() };
   if (raw && typeof raw === "object") {
     const o = raw as Record<string, unknown>;
     for (const key of ["url", "URL", "uri"]) {
       const val = o[key];
-      if (typeof val === "string" && val.trim()) return { url: val.trim() };
+      if (typeof val === "string" && val.trim()) {
+        const offset = typeof o.offset === "number" ? o.offset : undefined;
+        return { url: val.trim(), offset };
+      }
     }
   }
   return { url: "" };
@@ -63,10 +72,17 @@ const fetchPageTool = defineTool({
   parameters: fetchParams,
 
   async execute(_toolCallId, params) {
-    const { url } = coerceUrlParams(params);
-    const result = await fetchPage({ url });
+    const { url, offset } = coerceUrlParams(params);
+    const normalizedUrl = normalizeUrl(url);
+
+    // For offset > 0, serve from cache
+    const cached = getCachedPage(normalizedUrl);
+
+    // Fetch fresh (cache will be populated automatically); if cached
+    // and we have an offset, we can skip the network call entirely.
+    const result = cached?.result ?? (await fetchPage(url));
     return {
-      content: [{ type: "text", text: formatHtmlResult(result) }],
+      content: [{ type: "text", text: formatHtmlResult(result, offset) }],
       details: {
         statusCode: result.statusCode,
         contentType: result.contentType,
@@ -103,9 +119,18 @@ const fetchTextTool = defineTool({
   parameters: fetchParams,
 
   async execute(_toolCallId, params) {
-    const { url } = coerceUrlParams(params);
-    const result = await fetchPage({ url });
-    const output = formatTextResult(result);
+    const { url, offset } = coerceUrlParams(params);
+    const normalizedUrl = normalizeUrl(url);
+
+    // For offset > 0, serve from cache (pre-computed text avoids re-processing)
+    const cached = getCachedPage(normalizedUrl);
+
+    // Fetch fresh if not cached; cache is populated automatically
+    const result = cached?.result ?? (await fetchPage(url));
+    const output = cached
+      ? formatTextResult(result, offset ?? cached)
+      : formatTextResult(result, offset);
+
     return {
       content: [{ type: "text", text: output }],
       details: {
@@ -158,7 +183,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       try {
-        const result = await fetchPage({ url });
+        const result = await fetchPage(url);
         const statusText = result.statusCode === 200
           ? "OK"
           : result.statusCode >= 400
