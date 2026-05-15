@@ -16,13 +16,8 @@ export default defineConfig({
     hookTimeout: 15_000,
     coverage: {
       provider: "v8",
-      include: [
-        "**/extensions/fetch-page/**/*.ts",
-        "**/extensions/web-search/**/*.ts",
-      ],
-      exclude: [
-        "**/index.ts",
-      ],
+      include: ["**/extensions/fetch-page/**/*.ts", "**/extensions/web-search/**/*.ts"],
+      exclude: ["**/index.ts"],
       reporter: ["text", "text-summary", "json", "html"],
       thresholds: {
         lines: 95,

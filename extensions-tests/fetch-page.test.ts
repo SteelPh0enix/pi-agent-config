@@ -24,7 +24,7 @@ import {
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSIONS_DIR = path.resolve(TEST_DIR, "..", "extensions");
-const readExtensionFile = (name: string) =>
+const readExtensionFile = (name: string): string =>
   fs.readFileSync(path.resolve(EXTENSIONS_DIR, name), "utf-8");
 
 // ---------------------------------------------------------------------------
@@ -182,9 +182,7 @@ describe("normalizeUrl (library)", () => {
   });
 
   it("leaves already-prefixed URLs alone", () => {
-    expect(normalizeUrl("https://example.com/path?q=1")).toBe(
-      "https://example.com/path?q=1",
-    );
+    expect(normalizeUrl("https://example.com/path?q=1")).toBe("https://example.com/path?q=1");
   });
 
   it("handles http:// prefix", () => {
@@ -253,7 +251,7 @@ describe("formatTextResult (library)", () => {
     const result = {
       statusCode: 200,
       finalUrl: "https://example.com",
-      html: '<title>My Page</title><body>Hello</body>',
+      html: "<title>My Page</title><body>Hello</body>",
     };
     const output = formatTextResult(result);
     expect(output).toContain("My Page");
@@ -265,7 +263,7 @@ describe("formatTextResult (library)", () => {
     const result = {
       statusCode: 200,
       finalUrl: "https://example.com/My-Page",
-      html: '<title>My Page</title><body>Hello</body>',
+      html: "<title>My Page</title><body>Hello</body>",
     };
     // Should still work — no assertion needed beyond not crashing
     expect(() => formatTextResult(result)).not.toThrow();
@@ -327,13 +325,15 @@ describe("fetchPage (mocked)", () => {
   });
 
   it("fetches the correct URL", async () => {
-    const mockFetch = vi.fn(() => Promise.resolve({
-      ok: true,
-      status: 200,
-      url: "https://example.com/final",
-      headers: new Map([["content-type", "text/html"]]),
-      text: () => Promise.resolve("<html><body>Hello</body></html>"),
-    }));
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        url: "https://example.com/final",
+        headers: new Map([["content-type", "text/html"]]),
+        text: () => Promise.resolve("<html><body>Hello</body></html>"),
+      }),
+    );
     globalThis.fetch = mockFetch as never;
 
     await fetchPage({ url: "https://example.com" });
@@ -350,31 +350,32 @@ describe("fetchPage (mocked)", () => {
   });
 
   it("adds https:// prefix when missing", async () => {
-    const mockFetch = vi.fn(() => Promise.resolve({
-      ok: true,
-      status: 200,
-      url: "https://example.com/page",
-      headers: new Map(),
-      text: () => Promise.resolve("<p>ok</p>"),
-    }));
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        url: "https://example.com/page",
+        headers: new Map(),
+        text: () => Promise.resolve("<p>ok</p>"),
+      }),
+    );
     globalThis.fetch = mockFetch as never;
 
     await fetchPage({ url: "example.com/page" });
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      "https://example.com/page",
-      expect.anything(),
-    );
+    expect(mockFetch).toHaveBeenCalledWith("https://example.com/page", expect.anything());
   });
 
   it("returns structured result with metadata", async () => {
-    const mockFetch = vi.fn(() => Promise.resolve({
-      ok: true,
-      status: 200,
-      url: "https://example.com",
-      headers: new Map([["content-type", "text/html; charset=utf-8"]]),
-      text: () => Promise.resolve("<html><body>Hello World</body></html>"),
-    }));
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        url: "https://example.com",
+        headers: new Map([["content-type", "text/html; charset=utf-8"]]),
+        text: () => Promise.resolve("<html><body>Hello World</body></html>"),
+      }),
+    );
     globalThis.fetch = mockFetch as never;
 
     const result = await fetchPage({ url: "example.com" });
@@ -389,13 +390,15 @@ describe("fetchPage (mocked)", () => {
   });
 
   it("handles non-200 status codes correctly", async () => {
-    const mockFetch = vi.fn(() => Promise.resolve({
-      ok: true,
-      status: 404,
-      url: "https://example.com/missing",
-      headers: new Map(),
-      text: () => Promise.resolve("<h1>Not Found</h1>"),
-    }));
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 404,
+        url: "https://example.com/missing",
+        headers: new Map(),
+        text: () => Promise.resolve("<h1>Not Found</h1>"),
+      }),
+    );
     globalThis.fetch = mockFetch as never;
 
     const result = await fetchPage({ url: "https://example.com/missing" });
@@ -404,36 +407,32 @@ describe("fetchPage (mocked)", () => {
 
   it("respects timeout option", async () => {
     let resolveFetch: ((value: Response) => void) | undefined;
-    const mockFetch = vi.fn(() => new Promise<Response>((resolve) => {
-      resolveFetch = resolve;
-    }));
-    globalThis.fetch = mockFetch as never;
+    const mockFetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    globalThis.fetch = mockFetch;
 
-    const p = fetchPage(
-      { url: "https://example.com/slow" },
-      { timeoutMs: 50 },
-    ).catch(() => null);
+    const p = fetchPage({ url: "https://example.com/slow" }, { timeoutMs: 50 }).catch(() => null);
 
     await new Promise((r) => setTimeout(r, 100));
-    resolveFetch?.(
-      {
-        ok: false,
-        status: 499,
-        url: "",
-        headers: new Map(),
-        text: () => Promise.reject(new Error("aborted")),
-      } as unknown as Response,
-    );
+    resolveFetch?.({
+      ok: false,
+      status: 499,
+      url: "",
+      headers: new Map(),
+      text: () => Promise.reject(new Error("aborted")),
+    } as unknown as Response);
 
     await expect(p).resolves.toBeNull();
   });
 
   it("throws on network error", async () => {
-    globalThis.fetch = vi.fn(() => Promise.reject(new Error("ENOTFOUND"))) as never;
+    globalThis.fetch = vi.fn(() => Promise.reject(new Error("ENOTFOUND")));
 
-    await expect(fetchPage({ url: "https://nonexistent.invalid" })).rejects.toThrow(
-      /Failed to fetch/,
-    );
+    await expect(fetchPage({ url: "https://nonexistent.invalid" })).rejects.toThrow(/Failed to fetch/);
   });
 });
 
@@ -456,7 +455,7 @@ describe("fetch-page (extension)", () => {
     const src = readExtensionFile("fetch-page/index.ts");
 
     // Should import from lib
-    expect(src).toContain('import');
+    expect(src).toContain("import");
     expect(src).toContain('from "./fetch-page-lib"');
     // Tool names should be present
     expect(src).toContain("fetch_page");
@@ -527,7 +526,7 @@ describe("coerceUrlParams (extension helper)", () => {
   });
 
   it("returns empty url for number input", () => {
-    expect(coerceUrlParams(42 as unknown)).toEqual({ url: "" });
+    expect(coerceUrlParams(42)).toEqual({ url: "" });
   });
 
   it("returns empty url for empty object", () => {
@@ -539,7 +538,9 @@ describe("coerceUrlParams (extension helper)", () => {
   });
 
   it("returns empty url when string value is whitespace only", () => {
-    expect(coerceUrlParams({ url: "   ", uri: "https://fallback.com" })).toEqual({ url: "https://fallback.com" });
+    expect(coerceUrlParams({ url: "   ", uri: "https://fallback.com" })).toEqual({
+      url: "https://fallback.com",
+    });
   });
 });
 
@@ -553,8 +554,9 @@ describe("decodeHtmlEntities (library)", () => {
   });
 
   it("decodes &quot; and &#39;/&apos;", () => {
-    expect(decodeHtmlEntities("He said &quot;hello&quot; and it&#39;s fine &apos;too&apos;"))
-      .toBe(`He said "hello" and it's fine 'too'`);
+    expect(decodeHtmlEntities("He said &quot;hello&quot; and it&#39;s fine &apos;too&apos;")).toBe(
+      `He said "hello" and it's fine 'too'`,
+    );
   });
 
   it("decodes &nbsp;", () => {
@@ -702,7 +704,7 @@ describe("htmlToText (additional edge cases)", () => {
 // ---------------------------------------------------------------------------
 
 describe("extractTitle (additional edge cases)", () => {
-  it("falls back to name=\"title\" meta tag", () => {
+  it('falls back to name="title" meta tag', () => {
     const html = '<meta name="title" content="Meta Title">';
     expect(extractTitle(html)).toBe("Meta Title");
   });
@@ -727,7 +729,7 @@ describe("extractTitle (additional edge cases)", () => {
   });
 
   it("handles <title> with numeric entities", () => {
-    const html = '<title>Code &#65;&#66;&#67;</title>';
+    const html = "<title>Code &#65;&#66;&#67;</title>";
     expect(extractTitle(html)).toBe("Code ABC");
   });
 });
@@ -833,15 +835,13 @@ describe("fetchPage (abort/error edge cases)", () => {
   it("handles AbortError gracefully", async () => {
     // Simulate a real abort error scenario
     const abortError = new DOMException("The operation was aborted", "AbortError");
-    globalThis.fetch = vi.fn(() => Promise.reject(abortError)) as never;
+    globalThis.fetch = vi.fn(() => Promise.reject(abortError));
 
-    await expect(fetchPage({ url: "https://example.com" })).rejects.toThrow(
-      /Failed to fetch.*aborted/,
-    );
+    await expect(fetchPage({ url: "https://example.com" })).rejects.toThrow(/Failed to fetch.*aborted/);
   });
 
   it("includes URL in error message", async () => {
-    globalThis.fetch = vi.fn(() => Promise.reject(new Error("Connection refused"))) as never;
+    globalThis.fetch = vi.fn(() => Promise.reject(new Error("Connection refused")));
 
     await expect(fetchPage({ url: "https://myhost.invalid/path" })).rejects.toThrow(
       /Failed to fetch https:\/\/myhost\.invalid\/path: Connection refused/,
@@ -849,11 +849,9 @@ describe("fetchPage (abort/error edge cases)", () => {
   });
 
   it("handles non-Error thrown values", async () => {
-    globalThis.fetch = vi.fn(() => Promise.reject("string error")) as never;
+    globalThis.fetch = vi.fn(() => Promise.reject(new Error("string error")));
 
-    await expect(fetchPage({ url: "https://example.com" })).rejects.toThrow(
-      /Failed to fetch.*string error/,
-    );
+    await expect(fetchPage({ url: "https://example.com" })).rejects.toThrow(/Failed to fetch.*string error/);
   });
 });
 
@@ -906,9 +904,7 @@ describe("fetch-page (extension, additional)", () => {
 
 describe("normalizeUrl (additional edge cases)", () => {
   it("preserves URL with ports", () => {
-    expect(normalizeUrl("https://example.com:8080/path")).toBe(
-      "https://example.com:8080/path",
-    );
+    expect(normalizeUrl("https://example.com:8080/path")).toBe("https://example.com:8080/path");
   });
 
   it("adds https:// to URLs with ports but no protocol", () => {
@@ -921,9 +917,7 @@ describe("normalizeUrl (additional edge cases)", () => {
   });
 
   it("adds https:// to URLs with paths but no protocol", () => {
-    expect(normalizeUrl("example.com/path/file.html")).toBe(
-      "https://example.com/path/file.html",
-    );
+    expect(normalizeUrl("example.com/path/file.html")).toBe("https://example.com/path/file.html");
   });
 
   it("handles mixed-case http prefix", () => {

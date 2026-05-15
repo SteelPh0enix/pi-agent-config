@@ -37,12 +37,15 @@ import {
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSIONS_DIR = path.resolve(TEST_DIR, "..", "extensions");
-const readExtensionFile = (name: string) =>
+const readExtensionFile = (name: string): string =>
   fs.readFileSync(path.resolve(EXTENSIONS_DIR, name), "utf-8");
 
 /** Minimal valid search result. */
 const R = (title: string, url: string, content = "", engines: string[] = []): SearchResult => ({
-  title, url, content, engines,
+  title,
+  url,
+  content,
+  engines,
 });
 
 /** Result without engines / content — for terser tests. */
@@ -53,23 +56,26 @@ import type { SearchResult } from "../extensions/web-search/search-lib";
 // --- Mock helpers ---
 
 /** Returns a fetch mock that resolves to { results, number_of_results }. */
-function mockFetchOk(results: unknown[] = [], number_of_results?: number) {
-  return vi.fn(() => Promise.resolve({
-    ok: true,
-    json: () => Promise.resolve({
-      results,
-      number_of_results: number_of_results ?? results.length,
+function mockFetchOk(results: unknown[] = [], number_of_results?: number): ReturnType<typeof vi.fn> {
+  return vi.fn(() =>
+    Promise.resolve({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          results,
+          number_of_results: number_of_results ?? results.length,
+        }),
     }),
-  }));
+  );
 }
 
 /** Returns a fetch mock that rejects with a network error. */
-function mockFetchReject(err: unknown) {
+function mockFetchReject(err: Error | DOMException): ReturnType<typeof vi.fn> {
   return vi.fn(() => Promise.reject(err));
 }
 
 /** Returns a fetch mock that resolves to a non-ok HTTP response. */
-function mockFetchHttpError(status: number, statusText: string) {
+function mockFetchHttpError(status: number, statusText: string): ReturnType<typeof vi.fn> {
   return vi.fn(() => Promise.resolve({ ok: false, status, statusText }));
 }
 
@@ -92,32 +98,17 @@ async function probeBackend(): Promise<boolean> {
 
 const _probePromise = probeBackend();
 
-/**
- * Defines a live integration test.
- * When the backend is reachable the test runs normally.
- * When it's not, the test is still registered (so the suite reports
- * true skip status) but the body is replaced with the standard skip
- * payload that vitest expects.
- */
-function itLive(name: string, fn: () => Promise<void> | void, timeout?: number) {
-  // Runner probes in first beforeEach; if probe says unreachable, skip.
-  let active = false;
-  // Re-use the same mutable box the describe's beforeEach updates.
-  return it(name, async () => {
-    if (!active) return;
-    await fn();
-  }, timeout);
-}
-
 // ---------------------------------------------------------------------------
 // 1. Library — formatResults unit tests
 // ---------------------------------------------------------------------------
 
 describe("formatResults (library)", () => {
   it("formats a single result with all fields", () => {
-    const output = formatResults("hello world", [
-      R("Hello World", "https://example.com", "A brief snippet.", ["google"]),
-    ], "1");
+    const output = formatResults(
+      "hello world",
+      [R("Hello World", "https://example.com", "A brief snippet.", ["google"])],
+      "1",
+    );
 
     expect(output).toContain('Search results for "hello world" (estimated total: 1):');
     expect(output).toContain("1. Hello World");
@@ -127,10 +118,7 @@ describe("formatResults (library)", () => {
   });
 
   it("numbers multiple results correctly", () => {
-    const output = formatResults("test", [
-      rx("First", "https://a.com"),
-      rx("Second", "https://b.com"),
-    ], "2");
+    const output = formatResults("test", [rx("First", "https://a.com"), rx("Second", "https://b.com")], "2");
 
     expect(output).toContain("1. First");
     expect(output).toContain("2. Second");
@@ -157,9 +145,7 @@ describe("formatResults (library)", () => {
   });
 
   it("shows publishedDate in metadata line", () => {
-    const output = formatResults("q", [
-      { ...rx("News", "https://n.com"), publishedDate: "2024-06-15" },
-    ], "1");
+    const output = formatResults("q", [{ ...rx("News", "https://n.com"), publishedDate: "2024-06-15" }], "1");
     expect(output).toContain("Published: 2024-06-15");
   });
 
@@ -212,9 +198,13 @@ describe("formatResults (library)", () => {
 
 describe("formatImageResults (library)", () => {
   it("formats image result with img_src field", () => {
-    const output = formatImageResults("sunset", [{
-      title: "Sunset", url: "https://p.com/s", img_src: "https://cdn.com/s.jpg",
-    } as SearchResult]);
+    const output = formatImageResults("sunset", [
+      {
+        title: "Sunset",
+        url: "https://p.com/s",
+        img_src: "https://cdn.com/s.jpg",
+      } as SearchResult,
+    ]);
 
     expect(output).toContain("1. Sunset");
     expect(output).toContain("   Image: https://cdn.com/s.jpg");
@@ -233,9 +223,15 @@ describe("formatImageResults (library)", () => {
   });
 
   it("caps at 10 images", () => {
-    const many = Array.from({ length: 15 }, (_, i) => ({
-      title: `Img ${i + 1}`, url: `https://i.com/${i}`, img_src: "",
-    } as SearchResult));
+    const many = Array.from(
+      { length: 15 },
+      (_, i) =>
+        ({
+          title: `Img ${i + 1}`,
+          url: `https://i.com/${i}`,
+          img_src: "",
+        }) as SearchResult,
+    );
 
     const output = formatImageResults("test", many);
     expect(output).toContain("10. Img 10");
@@ -338,23 +334,35 @@ describe("webSearch (mocked)", () => {
 
   it.each([
     { desc: "missing number_of_results", response: { results: [{ title: "X" }] }, expected: "1" },
-    { desc: "zero number_of_results with 3 results", response: { results: [{ title: "A" }, { title: "B" }, { title: "C" }], number_of_results: 0 }, expected: "3" },
-    { desc: "number_of_results < actual count", response: { results: Array.from({ length: 10 }, (_, i) => ({ title: `R${i}` })), number_of_results: 3 }, expected: "10" },
+    {
+      desc: "zero number_of_results with 3 results",
+      response: { results: [{ title: "A" }, { title: "B" }, { title: "C" }], number_of_results: 0 },
+      expected: "3",
+    },
+    {
+      desc: "number_of_results < actual count",
+      response: { results: Array.from({ length: 10 }, (_, i) => ({ title: `R${i}` })), number_of_results: 3 },
+      expected: "10",
+    },
   ])("totalEstimated falls back correctly: $desc", async ({ response, expected }) => {
-    globalThis.fetch = vi.fn(() => Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve(response),
-    })) as never;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(response),
+      }),
+    ) as never;
 
     const { totalEstimated } = await webSearch({ query: "test" });
     expect(totalEstimated).toBe(expected);
   });
 
   it("returns empty array when response has no results field", async () => {
-    globalThis.fetch = vi.fn(() => Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve({ other_field: "not results" }),
-    })) as never;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ other_field: "not results" }),
+      }),
+    ) as never;
 
     const { results } = await webSearch({ query: "test" });
     expect(results).toEqual([]);
@@ -365,39 +373,45 @@ describe("webSearch (mocked)", () => {
   it("throws on HTTP 503 with generic message (no backend name leak)", async () => {
     globalThis.fetch = mockFetchHttpError(503, "Service Unavailable") as never;
 
-    const err = await webSearch({ query: "test" }).catch((e) => e);
+    const err = await webSearch({ query: "test" }).catch((e: unknown) => e);
     expect(err.message).toMatch(/HTTP 503/);
     expect(err.message).not.toMatch(/SearX?NG/i);
   });
 
   it("wraps network errors with 'Search failed' prefix", async () => {
-    globalThis.fetch = mockFetchReject(new Error("ENOTFOUND")) as never;
+    globalThis.fetch = mockFetchReject(new Error("ENOTFOUND"));
     await expect(webSearch({ query: "test" })).rejects.toThrow(/Search failed/);
   });
 
   it("wraps AbortError gracefully", async () => {
-    globalThis.fetch = mockFetchReject(new DOMException("aborted", "AbortError")) as never;
+    globalThis.fetch = mockFetchReject(new DOMException("aborted", "AbortError"));
     await expect(webSearch({ query: "test" })).rejects.toThrow(/Search failed.*aborted/);
   });
 
   it("wraps non-Error rejection values", async () => {
-    globalThis.fetch = mockFetchReject("string error") as never;
+    globalThis.fetch = mockFetchReject(new Error("string error"));
     await expect(webSearch({ query: "test" })).rejects.toThrow(/Search failed.*string error/);
   });
 
   it("respects timeout option", async () => {
     let resolveFetch: ((v: Response) => void) | undefined;
-    globalThis.fetch = vi.fn(() => new Promise<Response>((r) => { resolveFetch = r; })) as never;
+    globalThis.fetch = vi.fn(
+      () =>
+        new Promise<Response>((r) => {
+          resolveFetch = r;
+        }),
+    );
 
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- patching prototype intentionally
     const originalAbort = AbortController.prototype.abort;
-    (AbortController.prototype as any).abort = function () {
+    (AbortController.prototype as Record<string, unknown>).abort = function (this: AbortController): void {
       originalAbort.call(this);
       resolveFetch?.({ ok: false, status: 499, statusText: "aborted" } as Response);
     };
 
     const p = webSearch({ query: "test" }, { timeoutMs: 50 }).catch(() => null);
     await new Promise((r) => setTimeout(r, 100));
-    (AbortController.prototype as any).abort = originalAbort;
+    (AbortController.prototype as Record<string, unknown>).abort = originalAbort;
     await p;
   });
 
@@ -476,7 +490,8 @@ describe("web-search (extension)", () => {
     expect(formatResults).toBeDefined();
     expect(formatImageResults).toBeDefined();
     expect(webSearch).toBeDefined();
-    expect(getSearchBaseUrl()).toBe(process.env.PI_EXTENSION_SEARXNG_INSTANCE!.replace(/\/+$/, ""));
+    const envUrl = process.env.PI_EXTENSION_SEARXNG_INSTANCE ?? "";
+    expect(getSearchBaseUrl()).toBe(envUrl.replace(/\/+$/, ""));
     expect(SEARCH_TIMEOUT_MS).toBe(15_000);
   });
 
@@ -584,12 +599,16 @@ describe("web-search (integration)", () => {
     backendAvailable = await _probePromise;
   }, 15_000);
 
-  const itLive = (name: string, fn: () => Promise<void> | void, timeout?: number) => {
+  const itLive = (name: string, fn: () => Promise<void> | void, timeout?: number): ReturnType<typeof it> => {
     const label = backendAvailable ? name : `SKIPPED — ${name} (backend unreachable)`;
-    return it(label, async () => {
-      if (!backendAvailable) return;
-      await fn();
-    }, timeout ?? 20_000);
+    it(
+      label,
+      async () => {
+        if (!backendAvailable) return;
+        await fn();
+      },
+      timeout ?? 20_000,
+    );
   };
 
   // ------------------------------------------------------------------
@@ -597,20 +616,28 @@ describe("web-search (integration)", () => {
   // ------------------------------------------------------------------
 
   describe("connectivity", () => {
-    itLive("health-check ping returns HTTP 200", async () => {
-      const url = `${getSearchBaseUrl()}/search?q=ping&format=json`;
-      const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-      expect(resp.status).toBe(200);
-    }, 15_000);
+    itLive(
+      "health-check ping returns HTTP 200",
+      async () => {
+        const url = `${getSearchBaseUrl()}/search?q=ping&format=json`;
+        const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+        expect(resp.status).toBe(200);
+      },
+      15_000,
+    );
 
-    itLive("health-check ping returns parseable JSON", async () => {
-      const url = `${getSearchBaseUrl()}/search?q=ping&format=json`;
-      const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-      expect(resp.ok).toBe(true);
-      const data = await resp.json();
-      expect(data).toBeDefined();
-      expect(Array.isArray(data.results)).toBe(true);
-    }, 15_000);
+    itLive(
+      "health-check ping returns parseable JSON",
+      async () => {
+        const url = `${getSearchBaseUrl()}/search?q=ping&format=json`;
+        const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+        expect(resp.ok).toBe(true);
+        const data = await resp.json();
+        expect(data).toBeDefined();
+        expect(Array.isArray(data.results)).toBe(true);
+      },
+      15_000,
+    );
   });
 
   // ------------------------------------------------------------------
@@ -743,12 +770,10 @@ describe("web-search (integration)", () => {
       const imageLines = formatted.split("\n").filter((l) => l.startsWith("   Image:"));
       expect(imageLines.length).toBe(Math.min(results.length, 10));
       for (const line of imageLines) {
-        expect(line).toMatch(/   Image: ((https?:)?\/\/.*|N\/A)/);
+        expect(line).toMatch(/ {3}Image: ((https?:)?\/\/.*|N\/A)/);
       }
 
-      expect(formatted).toContain(
-        `Showing top ${Math.min(results.length, 10)} of ${results.length} images.`,
-      );
+      expect(formatted).toContain(`Showing top ${Math.min(results.length, 10)} of ${results.length} images.`);
     });
   });
 
@@ -757,11 +782,15 @@ describe("web-search (integration)", () => {
   // ------------------------------------------------------------------
 
   describe("error scenarios", () => {
-    itLive("search respects custom timeout parameter", async () => {
-      const start = Date.now();
-      await webSearch({ query: "timeout-test" }, { timeoutMs: 50 }).catch(() => {});
-      expect(Date.now() - start).toBeLessThan(2_000);
-    }, 10_000);
+    itLive(
+      "search respects custom timeout parameter",
+      async () => {
+        const start = Date.now();
+        await webSearch({ query: "timeout-test" }, { timeoutMs: 50 }).catch(() => {});
+        expect(Date.now() - start).toBeLessThan(2_000);
+      },
+      10_000,
+    );
   });
 
   // ------------------------------------------------------------------
@@ -791,10 +820,7 @@ describe("web-search (integration)", () => {
 
     itLive("web_image_search flow: query → webSearch(images) → formatImageResults", async () => {
       const query = "space nebula";
-      const { results } = await webSearch(
-        { query, categories: "images" },
-        { timeoutMs: SEARCH_TIMEOUT_MS },
-      );
+      const { results } = await webSearch({ query, categories: "images" }, { timeoutMs: SEARCH_TIMEOUT_MS });
       const formatted = formatImageResults(query, results);
 
       expect(formatted).toContain(`Image search results for "${query}"`);
