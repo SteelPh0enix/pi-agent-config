@@ -70,7 +70,8 @@ function mockFetchOk(results: unknown[] = [], number_of_results?: number): Retur
 }
 
 /** Returns a fetch mock that rejects with a network error. */
-function mockFetchReject(err: Error | DOMException): ReturnType<typeof vi.fn> {
+function mockFetchReject(err: unknown): ReturnType<typeof vi.fn> {
+  // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- testing non-Error rejection
   return vi.fn(() => Promise.reject(err));
 }
 
@@ -215,11 +216,12 @@ describe("formatImageResults (library)", () => {
     const results = [
       { title: "Empty", url: "https://a.com", img_src: "" },
       { title: "Missing", url: "https://b.com" },
-    ] as SearchResult[];
+      { title: "Null", url: "https://c.com", img_src: null },
+    ] as unknown as SearchResult[];
 
     const output = formatImageResults("test", results);
-    // Both results should show N/A — exactly 2 N/A occurrences
-    expect(output.match(/Image: N\/A/g)?.length).toBe(2);
+    // All three results should show N/A
+    expect(output.match(/Image: N\/A/g)?.length).toBe(3);
   });
 
   it("caps at 10 images", () => {
@@ -244,10 +246,9 @@ describe("formatImageResults (library)", () => {
     expect(output).toContain('Image search results for "cats":');
   });
 
-  it("handles empty results array", () => {
-    const output = formatImageResults("test", []);
-    expect(output).toContain('Image search results for "test":');
-    expect(output).toContain("Showing top 0 of 0 images.");
+  it("uses (no title) fallback when image result has no title", () => {
+    const output = formatImageResults("q", [{ url: "https://x.com" }] as SearchResult[]);
+    expect(output).toContain("(no title)");
   });
 
   it("separates multiple results with blank lines", () => {
@@ -389,8 +390,8 @@ describe("webSearch (mocked)", () => {
   });
 
   it("wraps non-Error rejection values", async () => {
-    globalThis.fetch = mockFetchReject(new Error("string error"));
-    await expect(webSearch({ query: "test" })).rejects.toThrow(/Search failed.*string error/);
+    globalThis.fetch = mockFetchReject("plain string rejection");
+    await expect(webSearch({ query: "test" })).rejects.toThrow(/Search failed.*plain string/);
   });
 
   it("respects timeout option", async () => {
@@ -585,6 +586,18 @@ describe("search-lib (runtime coverage)", () => {
   it("SEARCH_BASE_URL proxy supports .length", () => {
     expect(typeof SEARCH_BASE_URL.length).toBe("number");
     expect(SEARCH_BASE_URL.length).toBeGreaterThan(0);
+  });
+
+  it("SEARCH_BASE_URL proxy supports indexed character access", () => {
+    expect(SEARCH_BASE_URL[0]).toBe("h"); // "https://..." starts with h
+  });
+
+  it("SEARCH_BASE_URL proxy reports as String via Symbol.toStringTag", () => {
+    expect(Object.prototype.toString.call(SEARCH_BASE_URL)).toBe("[object String]");
+  });
+
+  it("SEARCH_BASE_URL proxy supports string methods via .bind", () => {
+    expect(SEARCH_BASE_URL.startsWith("https://")).toBe(true);
   });
 });
 

@@ -6,7 +6,7 @@
   "scripts": {
     "test": "cd .. && vitest run --config extensions-tests/vitest.config.ts",
     "test:watch": "cd .. && vitest --config extensions-tests/vitest.config.ts",
-    "coverage": "cd .. && vitest run --config extensions-tests/vitest.config.ts --coverage",
+    "coverage": "cd .. && NODE_PATH=extensions-tests/node_modules vitest run --config extensions-tests/vitest.config.ts --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --check .",

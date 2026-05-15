@@ -849,9 +849,12 @@ describe("fetchPage (abort/error edge cases)", () => {
   });
 
   it("handles non-Error thrown values", async () => {
-    globalThis.fetch = vi.fn(() => Promise.reject(new Error("string error")));
+    globalThis.fetch = vi.fn(() =>
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- testing non-Error rejections
+      Promise.reject("plain string rejection"),
+    );
 
-    await expect(fetchPage({ url: "https://example.com" })).rejects.toThrow(/Failed to fetch.*string error/);
+    await expect(fetchPage({ url: "https://example.com" })).rejects.toThrow(/Failed to fetch.*plain string/);
   });
 });
 
