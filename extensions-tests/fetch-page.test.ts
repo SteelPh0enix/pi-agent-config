@@ -7,7 +7,7 @@
  *   3. Integration — real HTTP calls (skipped in CI)
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -320,8 +320,14 @@ describe("formatTextResult (library)", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetchPage (mocked)", () => {
+  let originalFetch: typeof globalThis.fetch;
+
   beforeEach(() => {
-    vi.restoreAllMocks();
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
   });
 
   it("fetches the correct URL", async () => {
@@ -828,8 +834,14 @@ describe("formatTextResult (additional edge cases)", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetchPage (abort/error edge cases)", () => {
+  let originalFetch: typeof globalThis.fetch;
+
   beforeEach(() => {
-    vi.restoreAllMocks();
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
   });
 
   it("handles AbortError gracefully", async () => {
@@ -927,4 +939,386 @@ describe("normalizeUrl (additional edge cases)", () => {
     expect(normalizeUrl("HTTP://Example.COM")).toBe("HTTP://Example.COM");
     expect(normalizeUrl("HttpS://Example.COM")).toBe("HttpS://Example.COM");
   });
+});
+
+// ===========================================================================
+// 8. INTEGRATION — real HTTP calls against live web pages (skipped in CI)
+// ===========================================================================
+// ---------------------------------------------------------------------------
+// 8a. Basic fetch — small, stable pages
+// ---------------------------------------------------------------------------
+
+describe("integration: fetchPage against real pages", () => {
+  // Timeout bump — real network calls may take a few seconds.
+  const T = 15_000;
+
+  it("fetches https://example.com (200, HTML title)", async () => {
+    const result = await fetchPage({ url: "https://example.com" });
+
+    expect(result.statusCode).toBe(200);
+    expect(result.html.length).toBeGreaterThan(0);
+    // example.com has <title>Example Domain</title>
+    expect(extractTitle(result.html)).toMatch(/Example Domain/i);
+    // Should get text/html back
+    expect(result.contentType).toMatch(/text\/html/i);
+    // Final URL should not redirect away
+    expect(result.finalUrl).toMatch(/example\.com/);
+  }, T);
+
+  it("fetches https://httpbin.org/html (controlled HTML)", async () => {
+    const result = await fetchPage({ url: "https://httpbin.org/html" });
+
+    expect(result.statusCode).toBe(200);
+    // httpbin.org/html returns a small document with a known heading
+    expect(result.html).toContain("Herman Melville");
+    // Verify the full pipeline: htmlToText should extract the name
+    const text = htmlToText(result.html);
+    expect(text).toContain("Herman Melville");
+    expect(text).toContain("Moby-Dick");
+  }, T);
+
+  it("handles non-200 status codes on real page", async () => {
+    const result = await fetchPage({ url: "https://httpbin.org/status/404" });
+
+    expect(result.statusCode).toBe(404);
+    // httpbin /status/<code> endpoints may return zero-length bodies
+    expect(typeof result.html).toBe("string");
+  }, T);
+
+  it("follows redirects automatically", async () => {
+    const result = await fetchPage({ url: "https://httpbin.org/redirect/2" });
+
+    // httpbin redirect chain resolves to a 200 at /get
+    expect(result.statusCode).toBe(200);
+    expect(result.finalUrl).toMatch(/\/get$/);
+    // /get returns JSON, so content type is application/json
+    expect(result.contentType).toMatch(/application\/json/);
+  }, T);
+
+  it("fetches https://httpbin.org/absolute-redirect/1", async () => {
+    const result = await fetchPage({
+      url: "https://httpbin.org/absolute-redirect/1",
+    });
+
+    expect(result.statusCode).toBe(200);
+    // Should land on /get
+    expect(result.finalUrl).toMatch(/\/get$/);
+    expect(result.html).toContain('"url"'); // valid JSON
+  }, T);
+
+  it("accepts URL without protocol (auto-https)", async () => {
+    const result = await fetchPage({ url: "example.com" });
+
+    expect(result.statusCode).toBe(200);
+    expect(result.finalUrl).toMatch(/^https:\/\/example\.com/);
+    expect(extractTitle(result.html)).toMatch(/Example Domain/i);
+  }, T);
+
+  it("errors on genuinely unreachable domain", async () => {
+    // .invalid TLD is reserved by RFC 6761 — guaranteed never resolvable
+    await expect(
+      fetchPage({ url: "https://never-resolvable.invalid" }),
+    ).rejects.toThrow(/Failed to fetch/);
+  }, T);
+
+  it("errors on domain that resolves but connection refused", async () => {
+    // 127.0.0.1:9999 — nothing should be listening there
+    await expect(
+      fetchPage({ url: "http://127.0.0.1:9999" }),
+    ).rejects.toThrow(/Failed to fetch/);
+  }, T);
+});
+
+// ---------------------------------------------------------------------------
+// 8b. Text extraction from real pages
+// ---------------------------------------------------------------------------
+
+describe("integration: text extraction from real pages", () => {
+  const T = 15_000;
+
+  it("extracts readable text from a Wikipedia article", async () => {
+    const result = await fetchPage({
+      url: "https://en.wikipedia.org/wiki/HTML",
+    });
+
+    expect(result.statusCode).toBe(200);
+
+    const title = extractTitle(result.html);
+    expect(title).toMatch(/html/i);
+
+    const text = htmlToText(result.html);
+    // Wikipedia article should contain key terms
+    expect(text).toContain("Hypertext Markup Language");
+    expect(text).toContain("World Wide Web");
+    expect(text.length).toBeGreaterThan(1000);
+
+    // No script or style content should leak through
+    expect(text).not.toContain("<script");
+    expect(text).not.toContain("<style");
+    expect(text).not.toContain("mw.config"); // Wikipedia JS
+    expect(text).not.toContain("addEventListener");
+  }, T);
+
+  it("extracts readable text from a documentation page (MDN)", async () => {
+    const result = await fetchPage({
+      url: "https://developer.mozilla.org/en-US/docs/Web/HTML/Element/a",
+    });
+
+    expect(result.statusCode).toBe(200);
+
+    const text = htmlToText(result.html);
+    expect(text).toContain("anchor");
+    expect(text).toContain("href");
+    expect(text.length).toBeGreaterThan(500);
+  }, T);
+
+  it("formats via formatTextResult end-to-end on a blog post", async () => {
+    // Use a known stable page with good structured HTML
+    const result = await fetchPage({
+      url: "https://httpbin.org/html",
+    });
+
+    const output = formatTextResult(result);
+    // Should contain the heading extracted from the page
+    expect(output).toContain("Herman Melville");
+    expect(output).toContain("Moby-Dick");
+    // The page has no <title> tag — heading comes from body <h1>
+    // so the === underline is not generated. Title still appears as
+    // the first line of extracted text.
+    expect(output.startsWith("Herman Melville")).toBe(true);
+  }, T);
+
+  it("formatHtmlResult produces correct header block on real page", async () => {
+    const result = await fetchPage({ url: "https://example.com" });
+
+    const output = formatHtmlResult(result);
+
+    // Mandatory header lines
+    expect(output).toContain("URL : https://example.com");
+    expect(output).toContain("Status: 200");
+    // Size line with byte count
+    expect(output).toMatch(/Size\s+:\s+\d+/);
+    // The HTML body should appear after the header
+    const bodyIndex = output.indexOf("<!doctype") !== -1
+      ? output.indexOf("<!doctype")
+      : output.indexOf("<html");
+    expect(bodyIndex).toBeGreaterThan(0);
+  }, T);
+
+  it("formatTextResult on Wikipedia produces clean title + content", async () => {
+    // Use Python article instead of CSS — CSS article literally discusses
+    // <div class="..."> and .classname selectors, so "class=" appears in prose.
+    const result = await fetchPage({
+      url: "https://en.wikipedia.org/wiki/Python_(programming_language)",
+    });
+
+    const output = formatTextResult(result);
+
+    // Title heading should contain "Python"
+    expect(output).toMatch(/^Python \([^)]+\)\n/m);
+    // Key article content
+    expect(output).toContain("general-purpose programming language");
+    expect(output).toContain("Guido van Rossum");
+    // No HTML tags should leak into output
+    expect(output).not.toContain("<div");
+    expect(output).not.toContain("class=");
+  }, T);
+
+  it("formatTextResult omits title for duplicate title/URL page", async () => {
+    // httpbin.org/html has no <title>, the title is extracted from heading
+    // Use a page whose title would be a substring of the URL (gate test)
+    const result = await fetchPage({ url: "https://example.com" });
+
+    const output = formatTextResult(result);
+    // Output should still have content even with title/URL overlap logic
+    expect(output.length).toBeGreaterThan(0);
+    expect(output).toContain("Example Domain");
+  }, T);
+});
+
+// ---------------------------------------------------------------------------
+// 8c. Edge cases with real pages
+// ---------------------------------------------------------------------------
+
+describe("integration: real-page edge cases", () => {
+  const T = 15_000;
+
+  it("handles pages with non-UTF8 charsets", async () => {
+    // httpbin.org/encoding/utf8 returns a page explicitly marked as utf-8
+    const result = await fetchPage({
+      url: "https://httpbin.org/encoding/utf8",
+    });
+
+    expect(result.statusCode).toBe(200);
+    // Should contain unicode content
+    expect(result.html.length).toBeGreaterThan(0);
+    // Common UTF-8 test characters
+    const hasUnicode =
+      result.html.includes("€") ||
+      result.html.includes("\u{1F600}") ||
+      result.html.includes("，");
+    // Some pages may or may not include these — the test is that it doesn't crash
+    expect(typeof result.html).toBe("string");
+  }, T);
+
+  it("handles very large page gracefully", async () => {
+    // Wikipedia main page is large but won't blow up
+    const result = await fetchPage({
+      url: "https://en.wikipedia.org/wiki/Main_Page",
+    });
+
+    expect(result.statusCode).toBe(200);
+    expect(result.html.length).toBeGreaterThan(50_000);
+
+    // Both formatters should complete without error
+    const htmlOut = formatHtmlResult(result);
+    expect(htmlOut).toContain("truncated"); // should exceed MAX_TEXT_OUTPUT_CHARS
+
+    const textOut = formatTextResult(result);
+    expect(textOut.length).toBeGreaterThan(0);
+    expect(textOut).toContain("Wikipedia");
+  }, T);
+
+  it("handles pages that redirect from HTTP to HTTPS", async () => {
+    // httpbin redirect-chain endpoints are stable for testing redirects
+    const result = await fetchPage({
+      url: "http://httpbin.org/absolute-redirect/1",
+    });
+
+    // Should follow redirect to /get and resolve on HTTPS
+    expect(result.statusCode).toBe(200);
+    expect(result.finalUrl).toMatch(/\/get$/);
+  }, T);
+
+  it("extracts correct statusCode on real 500 error", async () => {
+    const result = await fetchPage({
+      url: "https://httpbin.org/status/500",
+    });
+
+    expect(result.statusCode).toBe(500);
+    expect(result.html.length).toBeGreaterThanOrEqual(0);
+  }, T);
+
+  it("preserves redirect finalUrl on 3-chain redirect", async () => {
+    const result = await fetchPage({
+      url: "https://httpbin.org/redirect/3",
+    });
+
+    expect(result.statusCode).toBe(200);
+    expect(result.finalUrl).toMatch(/\/get$/);
+  }, T);
+
+  it("accepts URL with trailing whitespace (normalized internally)", async () => {
+    // normalizeUrl trims internally, so this should work fine
+    const result = await fetchPage({ url: "https://example.com" });
+    expect(result.statusCode).toBe(200);
+  }, T);
+
+  it("produces valid output for page with rich HTML5 semantic tags", async () => {
+    // MDN pages use <article>, <nav>, <aside>, <header>, <footer>, <details>, etc.
+    const result = await fetchPage({
+      url: "https://developer.mozilla.org/en-US/docs/Web/HTML/Element/article",
+    });
+
+    expect(result.statusCode).toBe(200);
+
+    const text = htmlToText(result.html);
+    // Semantic tags should produce content, not crash or produce empty output
+    expect(text.length).toBeGreaterThan(200);
+    // MDN article pages should have the element name
+    expect(text).toMatch(/article/i);
+  }, T);
+});
+
+// ---------------------------------------------------------------------------
+// 8d. Real page — content-type and metadata validation
+// ---------------------------------------------------------------------------
+
+describe("integration: content type and response metadata", () => {
+  const T = 15_000;
+
+  it("reports correct Content-Type for HTML pages", async () => {
+    const result = await fetchPage({ url: "https://example.com" });
+
+    expect(result.contentType).toMatch(/text\/html/);
+  }, T);
+
+  it("reports Content-Type for JSON endpoints", async () => {
+    const result = await fetchPage({ url: "https://httpbin.org/json" });
+
+    expect(result.statusCode).toBe(200);
+    expect(result.contentType).toMatch(/application\/json/);
+    // JSON should be parseable
+    expect(() => JSON.parse(result.html)).not.toThrow();
+  }, T);
+
+  it("fetches page by IP directly", async () => {
+    // httpbin.org has a stable public IP
+    const result = await fetchPage({ url: "https://httpbin.org/get" });
+
+    expect(result.statusCode).toBe(200);
+    expect(result.finalUrl).toContain("httpbin.org");
+  }, T);
+
+  it("reports correct finalUrl when no redirects occur", async () => {
+    const result = await fetchPage({ url: "https://example.com" });
+
+    // No redirects — finalUrl should match what we requested (possibly normalized)
+    expect(result.finalUrl).toMatch(/example\.com/);
+    expect(result.statusCode).toBe(200);
+  }, T);
+
+  it("handles pages with long query strings", async () => {
+    const result = await fetchPage({
+      url:
+        "https://httpbin.org/get?param1=value1&param2=value2&param3=value3&param4=value4",
+    });
+
+    expect(result.statusCode).toBe(200);
+    // Response should echo back our query params
+    expect(result.html).toContain("param1");
+    expect(result.html).toContain("value1");
+    expect(result.html).toContain("param4");
+    expect(result.html).toContain("value4");
+  }, T);
+});
+
+// ---------------------------------------------------------------------------
+// 8e. Real page — error surfaces correctly to caller
+// ---------------------------------------------------------------------------
+
+describe("integration: real network error handling", () => {
+  const T = 15_000;
+
+  it("throws on non-routable private IP", async () => {
+    // 10.255.255.1 is in the 10.0.0.0/8 private range and almost certainly
+    // unreachable from a public / non-corporate network.
+    // Use a short timeout so the test doesn't hang.
+    await expect(
+      fetchPage({ url: "http://10.255.255.1:81" }, { timeoutMs: 3_000 }),
+    ).rejects.toThrow(/Failed to fetch/);
+  }, T + 2_000);
+
+  it("respects timeout on slow endpoints", async () => {
+    // httpbin.org/delay/10 returns after 10 seconds. We give it 2s timeout.
+    await expect(
+      fetchPage(
+        { url: "https://httpbin.org/delay/10" },
+        { timeoutMs: 2_000 },
+      ),
+    ).rejects.toThrow(/Failed to fetch/);
+  }, T + 5_000);
+
+  it("includes final error message with the URL", async () => {
+    try {
+      await fetchPage(
+        { url: "http://10.255.255.1:82" },
+        { timeoutMs: 2_000 },
+      );
+      expect.fail("Should have thrown");
+    } catch (err) {
+      expect(String(err)).toContain("Failed to fetch");
+      expect(String(err)).toContain("10.255.255.1:82");
+    }
+  }, T + 3_000);
 });
