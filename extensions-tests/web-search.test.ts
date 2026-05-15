@@ -29,6 +29,7 @@ import {
   getSearchBaseUrl,
   SEARCH_BASE_URL,
   SEARCH_TIMEOUT_MS,
+  GENERAL_SEARCH_ENGINES,
 } from "../extensions/web-search/search-lib";
 
 // ---------------------------------------------------------------------------
@@ -191,6 +192,39 @@ describe("formatResults (library)", () => {
     const output = formatResults('foo "bar" & baz', [rx("R", "https://x.com")], "1");
     expect(output).toContain('Search results for "foo "bar" & baz"');
   });
+
+  it("shows page number in header when page > 1", () => {
+    const output = formatResults("test", [rx("R", "https://x.com")], "50", 2);
+    expect(output).toContain('Search results for "test" (page 2) (estimated total: 50):');
+  });
+
+  it("omits page label from header when page is 1", () => {
+    const output = formatResults("test", [rx("R", "https://x.com")], "50", 1);
+    expect(output).toContain('Search results for "test" (estimated total: 50):');
+    expect(output).not.toContain("(page 1)");
+  });
+
+  it("omits page label from header when page is undefined", () => {
+    const output = formatResults("test", [rx("R", "https://x.com")], "50");
+    expect(output).toContain('Search results for "test" (estimated total: 50):');
+    expect(output).not.toContain("(page");
+  });
+
+  it("shows page prefix in footer when page > 1", () => {
+    const output = formatResults("test", [rx("R", "https://x.com")], "50", 2);
+    expect(output).toContain("Page 2: showing top 1 of 1 results.");
+  });
+
+  it("omits page prefix from footer when page is 1", () => {
+    const output = formatResults("test", [rx("R", "https://x.com")], "50", 1);
+    expect(output).toContain("Showing top 1 of 1 results.");
+    expect(output).not.toMatch(/^Page 1:/m);
+  });
+
+  it("omits page prefix from footer when page is undefined", () => {
+    const output = formatResults("test", [rx("R", "https://x.com")], "50");
+    expect(output).toContain("Showing top 1 of 1 results.");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -260,6 +294,38 @@ describe("formatImageResults (library)", () => {
     const output = formatImageResults("test", results);
     expect(output.split("\n\n").length).toBeGreaterThanOrEqual(3);
   });
+
+  it("shows page number in header when page > 1", () => {
+    const output = formatImageResults("cats", [{ title: "T", url: "https://x.com" } as SearchResult], 3);
+    expect(output).toContain('Image search results for "cats" (page 3):');
+  });
+
+  it("omits page label from header when page is 1", () => {
+    const output = formatImageResults("cats", [{ title: "T", url: "https://x.com" } as SearchResult], 1);
+    expect(output).toContain('Image search results for "cats":');
+    expect(output).not.toContain("(page");
+  });
+
+  it("omits page label from header when page is undefined", () => {
+    const output = formatImageResults("cats", [{ title: "T", url: "https://x.com" } as SearchResult]);
+    expect(output).toContain('Image search results for "cats":');
+    expect(output).not.toContain("(page");
+  });
+
+  it("shows page prefix in footer when page > 1", () => {
+    const output = formatImageResults("test", [{ title: "T", url: "https://x.com" } as SearchResult], 2);
+    expect(output).toContain("Page 2: showing top 1 of 1 images.");
+  });
+
+  it("omits page prefix from footer when page is 1", () => {
+    const output = formatImageResults("test", [{ title: "T", url: "https://x.com" } as SearchResult], 1);
+    expect(output).toContain("Showing top 1 of 1 images.");
+  });
+
+  it("omits page prefix from footer when page is undefined", () => {
+    const output = formatImageResults("test", [{ title: "T", url: "https://x.com" } as SearchResult]);
+    expect(output).toContain("Showing top 1 of 1 images.");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -294,8 +360,11 @@ describe("webSearch (mocked)", () => {
     expect(url.searchParams.get("format")).toBe("json");
     expect(url.searchParams.get("pageno")).toBe("1");
     expect(url.searchParams.get("safesearch")).toBe("0");
-    expect(url.searchParams.get("engines")).toBeNull();
-    expect(url.searchParams.get("categories")).toBe("general");
+    // Default: no engines or categories → falls back to curated engines list
+    expect(url.searchParams.get("engines")).toBe(
+      "google,bing,duckduckgo,mojeek,wiby,wikipedia",
+    );
+    expect(url.searchParams.get("categories")).toBeNull();
   });
 
   it("passes through custom engines param", async () => {
@@ -322,15 +391,38 @@ describe("webSearch (mocked)", () => {
     expect(calledUrl(mock).searchParams.get("q")).toBe("hello world & foo=bar");
   });
 
+  it("sends correct pageno when page is specified", async () => {
+    const mock = mockFetchOk();
+    globalThis.fetch = mock as never;
+
+    await webSearch({ query: "test", page: 3 });
+    expect(calledUrl(mock).searchParams.get("pageno")).toBe("3");
+  });
+
+  it("defaults to page 1 when page is not specified", async () => {
+    const mock = mockFetchOk();
+    globalThis.fetch = mock as never;
+
+    await webSearch({ query: "test" });
+    expect(calledUrl(mock).searchParams.get("pageno")).toBe("1");
+  });
+
   // --- Response parsing ---
 
   it("parses returned results and number_of_results", async () => {
     const expected = [R("R1", "https://a.com", "C1"), R("R2", "https://b.com", "C2")];
     globalThis.fetch = mockFetchOk(expected, 42) as never;
 
-    const { results, totalEstimated } = await webSearch({ query: "test" });
+    const { results, totalEstimated, page } = await webSearch({ query: "test" });
     expect(results).toEqual(expected);
     expect(totalEstimated).toBe("42");
+    expect(page).toBe(1);
+  });
+
+  it("returns the requested page number", async () => {
+    globalThis.fetch = mockFetchOk([]) as never;
+    const { page } = await webSearch({ query: "test", page: 5 });
+    expect(page).toBe(5);
   });
 
   it.each([
@@ -418,8 +510,9 @@ describe("webSearch (mocked)", () => {
 
   it("handles empty query without crashing", async () => {
     globalThis.fetch = mockFetchOk([]) as never;
-    const { results } = await webSearch({ query: "" });
+    const { results, page } = await webSearch({ query: "" });
     expect(results).toEqual([]);
+    expect(page).toBe(1);
   });
 });
 
@@ -494,6 +587,7 @@ describe("web-search (extension)", () => {
     const envUrl = process.env.PI_EXTENSION_SEARXNG_INSTANCE ?? "";
     expect(getSearchBaseUrl()).toBe(envUrl.replace(/\/+$/, ""));
     expect(SEARCH_TIMEOUT_MS).toBe(15_000);
+    expect(GENERAL_SEARCH_ENGINES).toBeTruthy();
   });
 
   it("extension source imports from search-lib, not duplicating logic", () => {

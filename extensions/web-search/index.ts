@@ -62,14 +62,17 @@ function renderSearchResult(
 
 const searchParams = Type.Object({
   query: Type.String({ description: "The search query" }),
+  page: Type.Optional(Type.Number({ description: "Page number for paginated results (default: 1).", minimum: 1 })),
 });
 
 const newsSearchParams = Type.Object({
   query: Type.String({ description: "The news search query" }),
+  page: Type.Optional(Type.Number({ description: "Page number for paginated results (default: 1).", minimum: 1 })),
 });
 
 const imageSearchParams = Type.Object({
   query: Type.String({ description: "The image search query" }),
+  page: Type.Optional(Type.Number({ description: "Page number for paginated results (default: 1).", minimum: 1 })),
 });
 
 // ---------------------------------------------------------------------------
@@ -91,11 +94,12 @@ const webSearchTool = defineTool({
 
   async execute(_toolCallId, params) {
     const { query } = coerceQueryParams(params);
-    const { results, totalEstimated } = await webSearch({ query });
-    const formatted = formatResults(query, results, totalEstimated);
+    const page = params.page ?? 1;
+    const { results, totalEstimated } = await webSearch({ query, page });
+    const formatted = formatResults(query, results, totalEstimated, page);
     return {
       content: [{ type: "text", text: formatted }],
-      details: { resultCount: results.length, totalEstimated },
+      details: { resultCount: results.length, totalEstimated, page },
     };
   },
 
@@ -118,11 +122,12 @@ const webNewsSearchTool = defineTool({
 
   async execute(_toolCallId, params) {
     const { query } = coerceQueryParams(params);
-    const { results, totalEstimated } = await webSearch({ query, categories: "news" });
-    const formatted = formatResults(query, results, totalEstimated);
+    const page = params.page ?? 1;
+    const { results, totalEstimated } = await webSearch({ query, categories: "news", page });
+    const formatted = formatResults(query, results, totalEstimated, page);
     return {
       content: [{ type: "text", text: formatted }],
-      details: { resultCount: results.length, totalEstimated },
+      details: { resultCount: results.length, totalEstimated, page },
     };
   },
 
@@ -145,11 +150,12 @@ const webImageSearchTool = defineTool({
 
   async execute(_toolCallId, params) {
     const { query } = coerceQueryParams(params);
+    const page = params.page ?? 1;
     const { results, totalEstimated } = await webSearch(
-      { query, categories: "images" },
+      { query, categories: "images", page },
       { timeoutMs: SEARCH_TIMEOUT_MS },
     );
-    const formatted = formatImageResults(query, results);
+    const formatted = formatImageResults(query, results, page);
     return {
       content: [{ type: "text", text: formatted }],
       details: { resultCount: results.length },

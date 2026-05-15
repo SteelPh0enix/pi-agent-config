@@ -75,6 +75,8 @@ export interface SearchParams {
   query: string;
   engines?: string;
   categories?: string;
+  /** Page number for paginated results (default: 1). */
+  page?: number;
 }
 
 /**
@@ -84,14 +86,15 @@ export interface SearchParams {
 export async function webSearch(
   params: SearchParams,
   opts?: { timeoutMs?: number },
-): Promise<{ results: SearchResult[]; totalEstimated: string }> {
+): Promise<{ results: SearchResult[]; totalEstimated: string; page: number }> {
   const { query } = params;
+  const page = params.page ?? 1;
   const timeout = opts?.timeoutMs ?? SEARCH_TIMEOUT_MS;
 
   const url = new URL(`${SEARCH_BASE_URL}/search`);
   url.searchParams.set("q", query);
   url.searchParams.set("format", "json");
-  url.searchParams.set("pageno", "1");
+  url.searchParams.set("pageno", String(page));
   url.searchParams.set("safesearch", "0");
   if (params.engines) {
     url.searchParams.set("engines", params.engines);
@@ -130,7 +133,7 @@ export async function webSearch(
         : rawTotal,
     );
 
-    return { results: results as SearchResult[], totalEstimated: estimated };
+    return { results: results as SearchResult[], totalEstimated: estimated, page };
   } catch (err: unknown) {
     clearTimeout(timer);
     const message = err instanceof Error ? err.message : String(err);
@@ -145,7 +148,9 @@ export function formatResults(
   query: string,
   results: SearchResult[],
   totalEstimated: string,
+  page?: number,
 ): string {
+  const pageNum = page ?? 1;
   const items = results.slice(0, 10).map((r, i) => {
     const title = r.title ?? "(no title)";
     const rurl = r.url;
@@ -163,12 +168,17 @@ export function formatResults(
     ].join("\n");
   });
 
+  const pageLabel = pageNum > 1 ? ` (page ${pageNum})` : "";
+  const footer = pageNum > 1
+    ? `Page ${pageNum}: showing top ${Math.min(results.length, 10)} of ${results.length} results.`
+    : `Showing top ${Math.min(results.length, 10)} of ${results.length} results.`;
+
   return [
-    `Search results for "${query}" (estimated total: ${totalEstimated}):`,
+    `Search results for "${query}"${pageLabel} (estimated total: ${totalEstimated}):`,
     "",
     ...items,
     "",
-    `Showing top ${Math.min(results.length, 10)} of ${results.length} results.`,
+    footer,
   ].join("\n");
 }
 
@@ -178,7 +188,9 @@ export function formatResults(
 export function formatImageResults(
   query: string,
   results: SearchResult[],
+  page?: number,
 ): string {
+  const pageNum = page ?? 1;
   const items = results.slice(0, 10).map((r, i) => {
     const title = r.title ?? "(no title)";
     const imgSrc = (r.img_src as string) ?? "";
@@ -186,5 +198,10 @@ export function formatImageResults(
     return `${i + 1}. ${title}\n   Image: ${imgSrc || "N/A"}\n   Source: ${srcUrl}`;
   });
 
-  return `Image search results for "${query}":\n\n${items.join("\n\n")}\n\nShowing top ${Math.min(results.length, 10)} of ${results.length} images.`;
+  const pageLabel = pageNum > 1 ? ` (page ${pageNum})` : "";
+  const footer = pageNum > 1
+    ? `Page ${pageNum}: showing top ${Math.min(results.length, 10)} of ${results.length} images.`
+    : `Showing top ${Math.min(results.length, 10)} of ${results.length} images.`;
+
+  return `Image search results for "${query}"${pageLabel}:\n\n${items.join("\n\n")}\n\n${footer}`;
 }
