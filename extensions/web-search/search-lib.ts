@@ -37,6 +37,28 @@ export const SEARCH_BASE_URL = new Proxy({} as string, {
 }) as unknown as string;
 export const SEARCH_TIMEOUT_MS = 15_000;
 
+/**
+ * Curated list of reliable engines for general web search.
+ * We avoid specifying "categories=general" because it fires all 200+ engines,
+ * and fast-but-low-quality engines (openlibrary, wikibooks) fill the result
+ * page before slower-but-good engines (bing, mojeek) can respond.
+ *
+ * Engines intentionally excluded:
+ *  - duckduckgo, brave: upstream CAPTCHA / rate-limit issues
+ *  - google, qwant, startpage: upstream access denied
+ *  - openlibrary, wikibooks: fast but low-quality, crowd out good results
+ *
+ * Adjust this list as upstream engine availability changes.
+ */
+export const GENERAL_SEARCH_ENGINES = [
+  "google",
+  "bing",
+  "duckduckgo",
+  "mojeek",
+  "wiby",
+  "wikipedia",
+].join(",");
+
 // ---------------------------------------------------------------------------
 // Search API
 // ---------------------------------------------------------------------------
@@ -76,8 +98,10 @@ export async function webSearch(
   }
   if (params.categories) {
     url.searchParams.set("categories", params.categories);
-  } else {
-    url.searchParams.set("categories", "general");
+  } else if (!params.engines) {
+    // No engines or categories specified — use curated defaults
+    // to avoid fast-but-low-quality engines crowding out good results.
+    url.searchParams.set("engines", GENERAL_SEARCH_ENGINES);
   }
 
   const controller = new AbortController();
