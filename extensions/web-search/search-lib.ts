@@ -8,7 +8,33 @@
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-export const SEARCH_BASE_URL = "https://search.steelph0enix.dev";
+/**
+ * Returns the search backend base URL, read lazily so tests can set the
+ * environment variable before the first access.
+ */
+export function getSearchBaseUrl(): string {
+  const instance = process.env.PI_EXTENSION_SEARXNG_INSTANCE;
+  if (!instance) {
+    throw new Error(
+      "PI_EXTENSION_SEARXNG_INSTANCE environment variable is not set. "+
+        "Set it to your search backend URL.",
+    );
+  }
+  return instance.replace(/\/+$/, ""); // strip trailing slash
+}
+
+/** Search backend base URL, read lazily from PI_EXTENSION_SEARXNG_INSTANCE env var. */
+export const SEARCH_BASE_URL = new Proxy({} as string, {
+  get(_target: object, prop: string | symbol) {
+    if (prop === "toString" || prop === Symbol.toPrimitive) {
+      return () => getSearchBaseUrl();
+    }
+    if (prop === Symbol.toStringTag) return "String";
+    const val = getSearchBaseUrl();
+    const result = (val as any)[prop];
+    return typeof result === "function" ? result.bind(val) : result;
+  },
+}) as unknown as string;
 export const SEARCH_TIMEOUT_MS = 15_000;
 
 // ---------------------------------------------------------------------------

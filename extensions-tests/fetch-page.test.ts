@@ -8,6 +8,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import {
   htmlToText,
   extractTitle,
@@ -18,6 +21,11 @@ import {
   decodeHtmlEntities,
   MAX_TEXT_OUTPUT_CHARS,
 } from "../extensions/fetch-page/fetch-page-lib";
+
+const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
+const EXTENSIONS_DIR = path.resolve(TEST_DIR, "..", "extensions");
+const readExtensionFile = (name: string) =>
+  fs.readFileSync(path.resolve(EXTENSIONS_DIR, name), "utf-8");
 
 // ---------------------------------------------------------------------------
 // 1. Library — htmlToText unit tests
@@ -445,7 +453,7 @@ describe("fetch-page (extension)", () => {
   });
 
   it("extension source uses lib exports (no duplicate fetch logic)", () => {
-    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    const src = readExtensionFile("fetch-page/index.ts");
 
     // Should import from lib
     expect(src).toContain('import');
@@ -456,7 +464,7 @@ describe("fetch-page (extension)", () => {
   });
 
   it("extension defines both tools", () => {
-    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    const src = readExtensionFile("fetch-page/index.ts");
 
     // Both tool names should appear in defineTool calls
     expect(src).toContain('name: "fetch_page"');
@@ -855,7 +863,7 @@ describe("fetchPage (abort/error edge cases)", () => {
 
 describe("fetch-page (extension, additional)", () => {
   it("exports coerceUrlParams indirectly via tool execution", () => {
-    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    const src = readExtensionFile("fetch-page/index.ts");
 
     // Should define and use coerceUrlParams
     expect(src).toContain("coerceUrlParams");
@@ -865,29 +873,29 @@ describe("fetch-page (extension, additional)", () => {
   });
 
   it("defines fetch-check command", () => {
-    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    const src = readExtensionFile("fetch-page/index.ts");
     expect(src).toContain("fetch-check");
     expect(src).toContain("registerCommand");
   });
 
   it("handles session_start event", () => {
-    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    const src = readExtensionFile("fetch-page/index.ts");
     expect(src).toContain("session_start");
   });
 
   it("both tools use renderResult for TUI preview", () => {
-    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    const src = readExtensionFile("fetch-page/index.ts");
     const renderCount = (src.match(/renderResult/g) || []).length;
     expect(renderCount).toBeGreaterThanOrEqual(2); // one per tool
   });
 
   it("fetch_text tool reports textLength in details", () => {
-    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    const src = readExtensionFile("fetch-page/index.ts");
     expect(src).toContain("textLength");
   });
 
   it("fetch_page tool reports sizeBytes in details", () => {
-    const src = require("fs").readFileSync("../extensions/fetch-page/index.ts", "utf-8");
+    const src = readExtensionFile("fetch-page/index.ts");
     expect(src).toContain("sizeBytes");
   });
 });
