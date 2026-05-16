@@ -10,18 +10,18 @@ export default tseslint.config(
   // All TypeScript source and test files
   {
     extends: [eslint.configs.recommended],
-    files: ["*.test.ts", "../extensions/**/*-lib.ts"],
+    files: ["*.test.ts", "../extensions/**/*.ts"],
   },
 
   // TypeScript strict type-aware rules
   ...tseslint.configs.strictTypeChecked.map((c) => ({
     ...c,
-    files: ["*.test.ts", "../extensions/**/*-lib.ts"],
+    files: ["*.test.ts", "../extensions/**/*.ts"],
   })),
 
   // Project-level shared settings
   {
-    files: ["*.test.ts", "../extensions/**/*-lib.ts"],
+    files: ["*.test.ts", "../extensions/**/*.ts"],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {
@@ -72,9 +72,9 @@ export default tseslint.config(
     },
   },
 
-  // Source files: stricter rules
+  // Source files: stricter rules (excludes test files)
   {
-    files: ["../extensions/**/*-lib.ts"],
+    files: ["../extensions/**/*.ts"],
     rules: {
       "@typescript-eslint/restrict-template-expressions": ["error", { allowNumber: true }],
       "@typescript-eslint/no-explicit-any": "warn",

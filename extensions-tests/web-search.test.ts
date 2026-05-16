@@ -361,9 +361,7 @@ describe("webSearch (mocked)", () => {
     expect(url.searchParams.get("pageno")).toBe("1");
     expect(url.searchParams.get("safesearch")).toBe("0");
     // Default: no engines or categories → falls back to curated engines list
-    expect(url.searchParams.get("engines")).toBe(
-      "google,bing,duckduckgo,mojeek,wiby,wikipedia",
-    );
+    expect(url.searchParams.get("engines")).toBe("google,bing,duckduckgo,mojeek,wiby,wikipedia");
     expect(url.searchParams.get("categories")).toBeNull();
   });
 
