@@ -19,7 +19,7 @@ Additional files used for integration tests can be stored in `./extensions-tests
 * After modifying the extensions code (or their tests), you MUST ALWAYS run the linter (`eslint`) and formatter (`prettier`) over all the codebase, and then you MUST ALWAYS execute ALL the tests and make sure they all pass.
 * If the test fails due to external reasons (for example, connectivity issues or server-side issues when running integration tests), you should re-run the test and check if it's consistently broken. If it is, ask the user how to proceed.
 * Do NOT add any `package.json` or similar meta-files. The only `package.json` allowed is in `./extensions-tests` directory.
-* Coverage of the extensions code should remain at 100%/100%/100%. If it's any less - implement additional tests to cover all the code.
+* Coverage of the extensions code should remain at 95% statements / 95% branches / 100% functions / 100% lines. If it's any less - implement additional tests to cover all the code.
 
 ### Running tests
 

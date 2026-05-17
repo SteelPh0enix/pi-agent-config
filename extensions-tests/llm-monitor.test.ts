@@ -433,6 +433,91 @@ describe("processEvents (state machine)", () => {
     expect(state.generatedTokensTotal).toBe(0);
   });
 
+  it("handles launch event to start a new request", () => {
+    const initial = createIdleState();
+    const launchLine = parseLine(
+      "[60713] 842.20.100.500 I slot launch_slot_: id  0 | task 99999 | processing task",
+    );
+
+    expect(launchLine.length).toBe(1);
+    const result = processEvents(initial, launchLine);
+
+    expect(result.phase).toBe(RequestPhase.PROMPT_EVAL);
+    expect(result.taskId).toBe(99999);
+    expect(result.slotId).toBe(0);
+    expect(result.requestStartTime).not.toBeNull();
+  });
+
+  it("sets requestStartTime fallback in applyPromptProcessing when launch was skipped", () => {
+    const initial = createIdleState();
+    // First prompt_processing without a preceding launch — should set requestStartTime as fallback
+    const ppLine = parseLine(
+      "[60713] 842.22.609.896 I slot print_timing: id  0 | task 12160 | prompt processing, n_tokens =   8192, progress = 0.24, t =   5.83 s / 1406.04 tokens per second",
+    );
+
+    const result = processEvents(initial, ppLine);
+    expect(result.phase).toBe(RequestPhase.PROMPT_EVAL);
+    // requestStartTime should be set by the fallback path
+    expect(result.requestStartTime).not.toBeNull();
+  });
+
+  it("sets requestStartTime in applyPromptProcessing when state is non-IDLE but has no start time", () => {
+    // Edge case: state is already in PROMPT_EVAL with a taskId, but requestStartTime was never set
+    const state: Parameters<typeof processEvents>[0] = {
+      phase: RequestPhase.PROMPT_EVAL,
+      taskId: 12160,
+      slotId: 0,
+      promptTokensTotal: null,
+      promptTokensSeen: 0,
+      promptSpeed: 0,
+      promptElapsedMs: 0,
+      generatedTokensTotal: 0,
+      generationSpeed: 0,
+      generationStartTime: null,
+      requestStartTime: null, // explicitly null
+    };
+
+    const ppLine = parseLine(
+      "[60713] 842.22.609.896 I slot print_timing: id  0 | task 12160 | prompt processing, n_tokens =   8192, progress = 0.24, t =   5.83 s / 1406.04 tokens per second",
+    );
+
+    const result = processEvents(state, ppLine);
+    expect(result.phase).toBe(RequestPhase.PROMPT_EVAL);
+    // requestStartTime should be set by the fallback path (line 463)
+    expect(result.requestStartTime).not.toBeNull();
+    expect(result.promptTokensSeen).toBe(8192);
+  });
+
+  it("sets generationStartTime on generation_summary when not yet set", () => {
+    let state = createIdleState();
+
+    // Start prompt eval via prompt_processing
+    state = processEvents(
+      state,
+      parseLine(
+        "[60713] 842.22.609.896 I slot print_timing: id  0 | task 12160 | prompt processing, n_tokens =   8192, progress = 0.24, t =   5.83 s / 1406.04 tokens per second",
+      ),
+    );
+
+    // Apply prompt eval summary → transitions to GENERATION but doesn't set generationStartTime
+    const peLine = parseLine(
+      "[60713] prompt eval time =   40420.08 ms / 33626 tokens (    1.20 ms per token,   831.91 tokens per second)",
+    );
+    state = processEvents(state, peLine);
+
+    expect(state.phase).toBe(RequestPhase.GENERATION);
+    expect(state.generationStartTime).toBeNull(); // not set yet
+
+    // Now apply generation_summary — should set generationStartTime (line 544 path)
+    const genSummaryLine = parseLine(
+      "[60713]        eval time =   12922.17 ms /   644 tokens (   20.07 ms per token,    49.84 tokens per second)",
+    );
+    state = processEvents(state, genSummaryLine);
+
+    expect(state.phase).toBe(RequestPhase.GENERATION);
+    expect(state.generationStartTime).not.toBeNull();
+  });
+
   it("transitions to complete on release line", () => {
     let state = createIdleState();
     state = processEvents(
@@ -490,6 +575,58 @@ describe("processEvents (state machine)", () => {
     const totalLine = parseLine("[60713]       total time =   53342.24 ms / 34270 tokens");
     state = processEvents(state, totalLine);
     expect(state.phase).toBe(RequestPhase.COMPLETE);
+  });
+
+  it("skips setting generationStartTime when already set during PROMPT_EVAL→GENERATION transition", () => {
+    // Edge case: state is in PROMPT_EVAL with generationStartTime already set,
+    // then an n_decoded event arrives → should transition to GENERATION without re-setting startTime
+    const state: Parameters<typeof processEvents>[0] = {
+      phase: RequestPhase.PROMPT_EVAL,
+      taskId: 12160,
+      slotId: 0,
+      promptTokensTotal: 33626,
+      promptTokensSeen: 33626,
+      promptSpeed: 831.91,
+      promptElapsedMs: 40420.08,
+      generatedTokensTotal: 0,
+      generationSpeed: 0,
+      generationStartTime: Date.now() - 1000, // already set!
+    };
+
+    const genLine = parseLine(
+      "[60713] 842.22.609.896 I slot print_timing: id  0 | task 12160 | n_decoded =    100, tg =  49.88 t/s",
+    );
+
+    const result = processEvents(state, genLine);
+    expect(result.phase).toBe(RequestPhase.GENERATION);
+    // generationStartTime should be unchanged (not re-set)
+    expect(result.generationStartTime).toBe(state.generationStartTime);
+  });
+
+  it("processes n_decoded event when already in GENERATION phase — updates tokens", () => {
+    // Directly test line 511 else branch: phase IS GENERATION, proceed to update tokens
+    const state: Parameters<typeof processEvents>[0] = {
+      phase: RequestPhase.GENERATION,
+      taskId: 12160,
+      slotId: 0,
+      promptTokensTotal: 33626,
+      promptTokensSeen: 33626,
+      promptSpeed: 831.91,
+      promptElapsedMs: 40420.08,
+      generatedTokensTotal: 100, // previous count
+      generationSpeed: 49.88,
+      generationStartTime: Date.now() - 5000,
+    };
+
+    const genLine = parseLine(
+      "[60713] 842.22.609.896 I slot print_timing: id  0 | task 12160 | n_decoded =    550, tg =  49.87 t/s",
+    );
+
+    const result = processEvents(state, genLine);
+    // Should proceed past the phase check and update tokens
+    expect(result.phase).toBe(RequestPhase.GENERATION);
+    expect(result.generatedTokensTotal).toBe(550);
+    expect(result.generationSpeed).toBe(49.87);
   });
 });
 
@@ -674,6 +811,54 @@ describe("renderDashboard", () => {
     expect(lines.some((l) => l.includes("550"))).toBe(true);
   });
 
+  it("shows no speed line when promptSpeed is 0", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.GENERATION,
+      taskId: null,
+      promptTokensTotal: null,
+      promptTokensSeen: 8192,
+      promptSpeed: 0, // zero speed
+      promptElapsedMs: 5830,
+      promptComplete: false,
+      generatedTokensTotal: 550,
+      generationSpeed: 49.87,
+      generationStartTime: Date.now() - 5000,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 10000,
+      totalElapsedMs: 10000,
+    };
+
+    const lines = renderDashboard(stats);
+    // No speed line in prompt section when speed is 0
+    const promptSection = lines.filter((l) => l.includes("Prompt:")).join("\n");
+    expect(promptSection).not.toContain("Speed:");
+  });
+
+  it("shows no speed line when promptTokensTotal known but promptSpeed is 0", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.GENERATION,
+      taskId: 12160,
+      promptTokensTotal: 33626, // total is known
+      promptTokensSeen: 33626,
+      promptSpeed: 0, // but speed is zero
+      promptElapsedMs: 40420.08,
+      promptComplete: true,
+      generatedTokensTotal: 550,
+      generationSpeed: 49.87,
+      generationStartTime: Date.now() - 5000,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 53000,
+      totalElapsedMs: 53000,
+    };
+
+    const lines = renderDashboard(stats);
+    // No speed line in prompt section when speed is 0
+    const promptSection = lines.filter((l) => l.includes("Prompt:")).join("\n");
+    expect(promptSection).not.toContain("Speed:");
+  });
+
   it("shows generation tokens without progress bar", () => {
     const stats: Parameters<typeof renderDashboard>[0] = {
       phase: RequestPhase.GENERATION,
@@ -767,6 +952,29 @@ describe("renderDashboard", () => {
     expect(lines.some((l) => l.includes("Total"))).toBe(false);
   });
 
+  it("omits total footer when phase is IDLE even if totalStartTime exists", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.IDLE,
+      taskId: null,
+      promptTokensTotal: null,
+      promptTokensSeen: 0,
+      promptSpeed: 0,
+      promptElapsedMs: 0,
+      promptComplete: false,
+      generatedTokensTotal: 0,
+      generationSpeed: 0,
+      generationStartTime: null,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 5000,
+      totalElapsedMs: 5000,
+    };
+
+    const lines = renderDashboard(stats);
+    // Footer should be omitted because phase is IDLE (condition requires both)
+    expect(lines.some((l) => l.includes("Total"))).toBe(false);
+  });
+
   it("shows 'waiting for tokens' when in generation but no tokens yet", () => {
     const stats: Parameters<typeof renderDashboard>[0] = {
       phase: RequestPhase.GENERATION,
@@ -787,6 +995,197 @@ describe("renderDashboard", () => {
 
     const lines = renderDashboard(stats);
     expect(lines.some((l) => l.includes("waiting"))).toBe(true);
+  });
+
+  it("shows complete status when phase is COMPLETE", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.COMPLETE,
+      taskId: 12160,
+      promptTokensTotal: 33626,
+      promptTokensSeen: 33626,
+      promptSpeed: 831.91,
+      promptElapsedMs: 40420.08,
+      promptComplete: true,
+      generatedTokensTotal: 644,
+      generationSpeed: 49.84,
+      generationStartTime: null,
+      generationComplete: true,
+      finalSummary: {
+        totalTimeMs: 53342.24,
+        totalTokens: 34270,
+      },
+      totalStartTime: Date.now() - 53342,
+      totalElapsedMs: 53342,
+    };
+
+    const lines = renderDashboard(stats);
+    expect(lines[0]).toContain("Request complete");
+    // Should show prompt done and generation info
+    expect(lines.some((l) => l.includes("Done"))).toBe(true);
+    expect(lines.some((l) => l.includes("644 tokens"))).toBe(true);
+  });
+
+  it("shows elapsed when promptElapsedMs > 0", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.GENERATION,
+      taskId: 12160,
+      promptTokensTotal: 33626,
+      promptTokensSeen: 33626,
+      promptSpeed: 831.91,
+      promptElapsedMs: 40420.08,
+      promptComplete: true,
+      generatedTokensTotal: 550,
+      generationSpeed: 49.87,
+      generationStartTime: Date.now() - 5000,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 53000,
+      totalElapsedMs: 53000,
+    };
+
+    const lines = renderDashboard(stats);
+    expect(lines.some((l) => l.includes("Elapsed"))).toBe(true);
+  });
+
+  it("shows generation speed when > 0", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.GENERATION,
+      taskId: null,
+      promptTokensTotal: null,
+      promptTokensSeen: 0,
+      promptSpeed: 0,
+      promptElapsedMs: 0,
+      promptComplete: false,
+      generatedTokensTotal: 550,
+      generationSpeed: 49.87,
+      generationStartTime: Date.now() - 5000,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 10000,
+      totalElapsedMs: 10000,
+    };
+
+    const lines = renderDashboard(stats);
+    expect(lines.some((l) => l.includes("Speed"))).toBe(true);
+    expect(lines.some((l) => l.includes("49.9 tok/s"))).toBe(true);
+  });
+
+  it("shows no generation speed line when generationSpeed is 0", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.GENERATION,
+      taskId: null,
+      promptTokensTotal: null,
+      promptTokensSeen: 0,
+      promptSpeed: 0,
+      promptElapsedMs: 0,
+      promptComplete: false,
+      generatedTokensTotal: 550, // tokens exist
+      generationSpeed: 0, // but speed is 0
+      generationStartTime: null,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 10000,
+      totalElapsedMs: 10000,
+    };
+
+    const lines = renderDashboard(stats);
+    // No speed line in generation section when speed is 0
+    const genSection = lines.filter((l) => l.includes("Generation:")).join("\n");
+    expect(genSection).not.toContain("Speed:");
+  });
+
+  it("shows elapsed only when generationStartTime exists and phase is GENERATION", () => {
+    // Case: generationComplete = true but phase changed (no elapsed shown)
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.COMPLETE,
+      taskId: null,
+      promptTokensTotal: null,
+      promptTokensSeen: 0,
+      promptSpeed: 0,
+      promptElapsedMs: 0,
+      promptComplete: false,
+      generatedTokensTotal: 550,
+      generationSpeed: 49.87,
+      generationStartTime: Date.now() - 5000,
+      generationComplete: true,
+      finalSummary: null,
+      totalStartTime: Date.now() - 10000,
+      totalElapsedMs: 10000,
+    };
+
+    const lines = renderDashboard(stats);
+    // No elapsed shown because phase is not GENERATION (even though generationStartTime exists)
+    expect(lines.some((l) => l.includes("generation") && l.includes("Elapsed"))).toBe(false);
+  });
+
+  it("shows no elapsed when generationStartTime is null in GENERATION", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.GENERATION,
+      taskId: null,
+      promptTokensTotal: null,
+      promptTokensSeen: 0,
+      promptSpeed: 0,
+      promptElapsedMs: 0,
+      promptComplete: false,
+      generatedTokensTotal: 550,
+      generationSpeed: 49.87,
+      generationStartTime: null, // null — no elapsed shown
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 10000,
+      totalElapsedMs: 10000,
+    };
+
+    const lines = renderDashboard(stats);
+    // No elapsed shown because generationStartTime is null
+    expect(lines.some((l) => l.includes("generation") && l.includes("Elapsed"))).toBe(false);
+  });
+
+  it("shows prompt elapsed when in 'tokens so far' path with elapsed > 0", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.PROMPT_EVAL,
+      taskId: null,
+      promptTokensTotal: null, // total unknown
+      promptTokensSeen: 8192,
+      promptSpeed: 0, // speed also 0
+      promptElapsedMs: 5830, // but elapsed is set
+      promptComplete: false,
+      generatedTokensTotal: 0,
+      generationSpeed: 0,
+      generationStartTime: null,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 10000,
+      totalElapsedMs: 10000,
+    };
+
+    const lines = renderDashboard(stats);
+    // Should show elapsed in prompt section (tokens so far path)
+    expect(lines.some((l) => l.includes("Elapsed"))).toBe(true);
+  });
+
+  it("shows no elapsed when promptElapsedMs is 0 in 'tokens so far' path", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.PROMPT_EVAL,
+      taskId: null,
+      promptTokensTotal: null, // total unknown
+      promptTokensSeen: 8192,
+      promptSpeed: 0,
+      promptElapsedMs: 0, // elapsed is zero — else branch
+      promptComplete: false,
+      generatedTokensTotal: 0,
+      generationSpeed: 0,
+      generationStartTime: null,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 10000,
+      totalElapsedMs: 10000,
+    };
+
+    const lines = renderDashboard(stats);
+    // No elapsed line in prompt section when elapsed is 0
+    const promptSection = lines.filter((l) => l.includes("Prompt:")).join("\n");
+    expect(promptSection).not.toContain("Elapsed:");
   });
 
   it("shows prompt so far when total unknown yet", () => {
@@ -966,6 +1365,31 @@ describe("renderFooterStatus", () => {
     expect(status).toContain("[accent:");
   });
 
+  it("omits prompt tok in COMPLETE when promptSpeed is zero", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.COMPLETE,
+      taskId: null,
+      promptTokensTotal: null,
+      promptTokensSeen: 8192,
+      promptSpeed: 0,
+      promptElapsedMs: 0,
+      promptComplete: false,
+      generatedTokensTotal: 100,
+      generationSpeed: 49.88,
+      generationStartTime: null,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: null,
+      totalElapsedMs: 0,
+    };
+
+    const status = renderFooterStatus(stats);
+    expect(status).toContain("Done");
+    // promptSpeed is 0, so "prompt tok" should NOT appear
+    expect(status).not.toContain("prompt tok");
+    expect(status).toContain("100");
+  });
+
   it("omits Gen section when generationComplete and no tokens generated (prompt-only)", () => {
     const stats: Parameters<typeof renderDashboard>[0] = {
       phase: RequestPhase.COMPLETE,
@@ -988,9 +1412,30 @@ describe("renderFooterStatus", () => {
     expect(status).toContain("Done");
     expect(status).toContain("53");
   });
+
+  it("shows 'waiting tokens...' when in generation with zero generated tokens", () => {
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.GENERATION,
+      taskId: null,
+      promptTokensTotal: null,
+      promptTokensSeen: 0,
+      promptSpeed: 0,
+      promptElapsedMs: 0,
+      promptComplete: false,
+      generatedTokensTotal: 0,
+      generationSpeed: 0,
+      generationStartTime: null,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 2000,
+      totalElapsedMs: 2000,
+    };
+
+    const status = renderFooterStatus(stats);
+    expect(status).toContain("Gen");
+    expect(status).toContain("waiting tokens...");
+  });
 });
-
-
 
 // ===========================================================================
 // 5. FIXTURE INTEGRATION — full lifecycle against real log data
@@ -1087,6 +1532,21 @@ describe("fixture integration", () => {
 
     // Just verify no crashes on full replay
     expect(() => processLogFixture(lines)).not.toThrow();
+  });
+
+  it("skips blank lines and non-event lines in processLogFixture", () => {
+    const lines = [
+      "",
+      "   ",
+      "garbage line that produces no events",
+      "[60713] prompt eval time =     262.13 ms /    53 tokens (    4.95 ms per token,   202.19 tokens per second)",
+      "",
+      "another garbage line", // this should be skipped
+    ];
+
+    const state = processLogFixture(lines);
+    expect(state.phase).toBe(RequestPhase.GENERATION);
+    expect(state.promptTokensTotal).toBe(53);
   });
 
   it("dashboard renders for a mid-life cycle state", () => {
