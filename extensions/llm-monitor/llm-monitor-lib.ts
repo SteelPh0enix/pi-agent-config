@@ -470,7 +470,9 @@ function applyPromptProcessing(
 
   if (event.progress >= 1.0) {
     state.promptTokensTotal = event.nTokens;
-  } else if (state.promptTokensTotal === null) {
+  } else {
+    // Always update the estimate from the latest line so stale estimates
+    // from earlier incremental updates don't cause >100% progress.
     const estimatedTotal = Math.round(event.nTokens / event.progress);
     state.promptTokensTotal = estimatedTotal;
   }
@@ -644,7 +646,7 @@ export function renderDashboard(
     const seen = Math.min(stats.promptTokensSeen, total);
 
     if (stats.phase === RequestPhase.PROMPT_EVAL) {
-      const pct = Math.round((seen / total) * 100);
+      const pct = Math.min(100, Math.round((seen / total) * 100));
       lines.push(`${t("muted", "Prompt:")} ${progressBar(pct, 20)} ${pct}%`);
     } else {
       lines.push(`${t("muted", "Prompt:")} ✓ Done`);
@@ -729,7 +731,12 @@ export function renderFooterStatus(
     case RequestPhase.PROMPT_EVAL: {
       const pct =
         stats.promptTokensTotal && stats.promptTokensTotal > 0
-          ? Math.round((stats.promptTokensSeen / stats.promptTokensTotal) * 100)
+          ? Math.min(
+              100,
+              Math.round(
+                (stats.promptTokensSeen / stats.promptTokensTotal) * 100,
+              ),
+            )
           : null;
       if (pct !== null) {
         parts.push(t("warning", "⚙ Prompt Eval"));

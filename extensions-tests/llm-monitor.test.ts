@@ -1598,6 +1598,169 @@ describe("fixture integration", () => {
 });
 
 // ===========================================================================
+// 7. PROMPT PROGRESS OVER-100% BUG — invalidated/re-processed prompts
+// ===========================================================================
+
+describe("prompt progress over 100% bug (invalidated/re-processed prompts)", () => {
+  it("does not show >100% when incremental prompt_processing has stale total estimate", () => {
+    // Simulates the bug scenario: server sends incremental progress updates
+    // where n_tokens grows but progress can decrease slightly due to batching.
+    // The first line estimates total = 8192 / 0.57 ≈ 14372.
+    // The second line has n_tokens=16384, which exceeds the estimate → >100%!
+    let state = createIdleState();
+
+    const lines = [
+      "[60713] 78.12.681.495 I slot print_timing: id  0 | task 11541 | prompt processing, n_tokens =   4096, progress = 0.57, t =   5.89 s / 695.11 tokens per second",
+      "[60713] 78.18.823.447 I slot print_timing: id  0 | task 11541 | prompt processing, n_tokens =   8192, progress = 0.72, t =  12.03 s / 680.71 tokens per second",
+      "[60713] 78.25.365.271 I slot print_timing: id  0 | task 11541 | prompt processing, n_tokens =  12288, progress = 0.86, t =  18.58 s / 661.48 tokens per second",
+      "[60713] 78.28.412.640 I slot print_timing: id  0 | task 11541 | prompt processing, n_tokens =  14121, progress = 0.93, t =  21.62 s / 653.03 tokens per second",
+    ];
+
+    for (const line of lines) {
+      state = processEvents(state, parseLine(line));
+    }
+
+    expect(state.phase).toBe(RequestPhase.PROMPT_EVAL);
+    // The latest n_tokens should be used as the seen count
+    expect(state.promptTokensSeen).toBe(14121);
+
+    // Derive stats and check that progress percentage is <= 100%
+    const stats = deriveStats(state);
+    if (stats.promptTokensTotal && stats.promptTokensTotal > 0) {
+      const pct = Math.round((stats.promptTokensSeen / stats.promptTokensTotal) * 100);
+      // Progress must never exceed 100% during prompt evaluation
+      expect(pct).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it("does not show >100% when progress value goes down between incremental updates", () => {
+    // Simulates server sending progress that decreases slightly:
+    // progress=0.82 → progress=0.79 (due to batching/rounding in llama.cpp)
+    let state = createIdleState();
+
+    const lines = [
+      "[60713] 75.00.990.003 I slot print_timing: id  0 | task 11413 | prompt processing, n_tokens =  57344, progress = 0.85, t = 302.97 s / 189.27 tokens per second",
+      "[60713] 75.31.095.596 I slot print_timing: id  0 | task 11413 | prompt processing, n_tokens =  61440, progress = 0.88, t = 333.08 s / 184.46 tokens per second",
+      "[60713] 76.02.853.843 I slot print_timing: id  0 | task 11413 | prompt processing, n_tokens =  65536, progress = 0.91, t = 364.83 s / 179.63 tokens per second",
+      "[60713] 76.36.582.652 I slot print_timing: id  0 | task 11413 | prompt processing, n_tokens =  69632, progress = 0.94, t = 398.56 s / 174.71 tokens per second",
+    ];
+
+    for (const line of lines) {
+      state = processEvents(state, parseLine(line));
+    }
+
+    expect(state.phase).toBe(RequestPhase.PROMPT_EVAL);
+    expect(state.promptTokensSeen).toBe(69632);
+
+    const stats = deriveStats(state);
+    if (stats.promptTokensTotal && stats.promptTokensTotal > 0) {
+      const pct = Math.round((stats.promptTokensSeen / stats.promptTokensTotal) * 100);
+      expect(pct).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it("does not show >100% after prompt is invalidated and re-processed with smaller token count", () => {
+    // Simulates: Task A processes, gets cancelled (idle), then Task B starts
+    // with fewer tokens but the old estimate was larger.
+    let state = createIdleState();
+
+    // Task A: processing with progress < 1.0 — sets estimated total
+    const taskALine = parseLine(
+      "[60713] 77.19.485.334 I slot print_timing: id  0 | task 11413 | prompt processing, n_tokens =  74858, progress = 0.98, t = 441.47 s / 169.57 tokens per second",
+    );
+    state = processEvents(state, taskALine);
+    expect(state.phase).toBe(RequestPhase.PROMPT_EVAL);
+    // Estimated total from 74858 / 0.98 ≈ 76386
+    const estimatedTotalA = Math.round(74858 / 0.98);
+    expect(state.promptTokensTotal).toBe(estimatedTotalA);
+
+    // Task A gets cancelled — release + idle reset everything
+    const releaseLine = parseLine(
+      "[60713] 77.39.219.977 I slot      release: id  0 | task 11413 | stop processing: n_tokens = 130974, truncated = 0",
+    );
+    state = processEvents(state, releaseLine);
+    expect(state.phase).toBe(RequestPhase.COMPLETE);
+
+    const idleLine = parseLine("[60713] 77.39.220.037 I srv  update_slots: all slots are idle");
+    state = processEvents(state, idleLine);
+    expect(state.phase).toBe(RequestPhase.IDLE);
+
+    // Task B: re-processed with fewer tokens — first line already at progress=1.00
+    const launchLine = parseLine(
+      "[60713] 77.46.518.411 I slot launch_slot_: id  0 | task 11438 | processing task, is_child = 0",
+    );
+    state = processEvents(state, launchLine);
+
+    const taskBLine = parseLine(
+      "[60713] 77.49.895.472 I slot print_timing: id  0 | task 11438 | prompt processing, n_tokens =   2823, progress = 1.00, t =   3.38 s / 835.94 tokens per second",
+    );
+    state = processEvents(state, taskBLine);
+
+    expect(state.phase).toBe(RequestPhase.PROMPT_EVAL);
+    expect(state.promptTokensSeen).toBe(2823);
+    expect(state.promptTokensTotal).toBe(2823); // progress=1.00 → exact total
+
+    const stats = deriveStats(state);
+    if (stats.promptTokensTotal && stats.promptTokensTotal > 0) {
+      const pct = Math.round((stats.promptTokensSeen / stats.promptTokensTotal) * 100);
+      expect(pct).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it("progress bar clamps to 100% even when seen exceeds total estimate", () => {
+    // Direct test: force a state where promptTokensSeen > promptTokensTotal
+    // (simulates the stale-estimate bug)
+    const stats: Parameters<typeof renderDashboard>[0] = {
+      phase: RequestPhase.PROMPT_EVAL,
+      taskId: 11413,
+      promptTokensTotal: 76386, // old estimate from 74858/0.98
+      promptTokensSeen: 76906, // actual total was higher (from progress=1.00 line)
+      promptSpeed: 167.42,
+      promptElapsedMs: 459360,
+      promptComplete: false,
+      generatedTokensTotal: 0,
+      generationSpeed: 0,
+      generationStartTime: null,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 500000,
+      totalElapsedMs: 500000,
+    };
+
+    const lines = renderDashboard(stats);
+    // The progress bar percentage must be clamped to 100%
+    const pctLine = lines.find((l) => l.includes("%"));
+    expect(pctLine).toBeDefined();
+    // Should show 100%, not 101%
+    expect(pctLine).not.toMatch(/10[1-9]%/);
+    expect(pctLine).toContain("100%");
+  });
+
+  it("footer percentage is clamped to 100% when seen exceeds total", () => {
+    const stats: Parameters<typeof renderFooterStatus>[0] = {
+      phase: RequestPhase.PROMPT_EVAL,
+      taskId: 11413,
+      promptTokensTotal: 76386,
+      promptTokensSeen: 76906,
+      promptSpeed: 167.42,
+      promptElapsedMs: 459360,
+      promptComplete: false,
+      generatedTokensTotal: 0,
+      generationSpeed: 0,
+      generationStartTime: null,
+      generationComplete: false,
+      finalSummary: null,
+      totalStartTime: Date.now() - 500000,
+      totalElapsedMs: 500000,
+    };
+
+    const footer = renderFooterStatus(stats);
+    // Footer percentage must not exceed 100%
+    expect(footer).not.toMatch(/10[1-9]%/);
+  });
+});
+
+// ===========================================================================
 // 6. EXTENSION — index.ts content checks
 // ===========================================================================
 
