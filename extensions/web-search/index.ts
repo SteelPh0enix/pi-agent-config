@@ -9,6 +9,7 @@ import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import {
+  coerceQueryParams,
   webSearch,
   formatResults,
   SEARCH_BASE_URL,
@@ -19,21 +20,6 @@ import {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Coerce raw tool call args into a valid { query: string }. */
-export function coerceQueryParams(raw: unknown): { query: string } {
-  if (typeof raw === "string") return { query: raw.trim() };
-  if (raw && typeof raw === "object") {
-    const o = raw as Record<string, unknown>;
-    // Try common key names the LLM might use
-    for (const key of ["query", "q"]) {
-      const val = o[key];
-      if (typeof val === "string" && val.trim()) return { query: val.trim() };
-    }
-  }
-  // Last resort — prevent undefined from leaking through
-  return { query: "" };
-}
 
 /** Shared renderResult: shows first N lines of text output in the TUI. */
 function renderSearchResult(
@@ -56,30 +42,57 @@ function renderSearchResult(
   return new Text(lines.join("\n"), 0, 0);
 }
 
-// ---------------------------------------------------------------------------
-// Tool schemas
-// ---------------------------------------------------------------------------
+/** Build a search tool definition from shared config. */
+function createSearchTool(config: {
+  name: string;
+  label: string;
+  description: string;
+  promptSnippet: string;
+  promptGuidelines: string[];
+  categories?: string;
+  maxLines?: number;
+}) {
+  const { name, label, description, promptSnippet, promptGuidelines, categories, maxLines = 6 } = config;
 
-const searchParams = Type.Object({
-  query: Type.String({ description: "The search query" }),
-  page: Type.Optional(Type.Number({ description: "Page number for paginated results (default: 1).", minimum: 1 })),
-});
+  return defineTool({
+    name,
+    label,
+    description,
+    promptSnippet,
+    promptGuidelines,
+    parameters: Type.Object({
+      query: Type.String({ description: `The ${label.toLowerCase()} query` }),
+      page: Type.Optional(Type.Number({ description: "Page number for paginated results (default: 1).", minimum: 1 })),
+    }),
 
-const newsSearchParams = Type.Object({
-  query: Type.String({ description: "The news search query" }),
-  page: Type.Optional(Type.Number({ description: "Page number for paginated results (default: 1).", minimum: 1 })),
-});
+    async execute(_toolCallId, params) {
+      const { query } = coerceQueryParams(params);
+      const page = params.page ?? 1;
+      const searchOpts = categories === "images" ? { timeoutMs: SEARCH_TIMEOUT_MS } : undefined;
+      const { results, totalEstimated } = await webSearch(
+        { query, ...(categories && { categories }), page },
+        searchOpts,
+      );
+      const formatted = categories === "images"
+        ? formatImageResults(query, results, page)
+        : formatResults(query, results, totalEstimated, page);
+      return {
+        content: [{ type: "text", text: formatted }],
+        details: { resultCount: results.length, ...(categories !== "images" && { totalEstimated }), page },
+      };
+    },
 
-const imageSearchParams = Type.Object({
-  query: Type.String({ description: "The image search query" }),
-  page: Type.Optional(Type.Number({ description: "Page number for paginated results (default: 1).", minimum: 1 })),
-});
+    renderResult(result, _options, _theme) {
+      return renderSearchResult(result, maxLines);
+    },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Tool definitions
 // ---------------------------------------------------------------------------
 
-const webSearchTool = defineTool({
+const webSearchTool = createSearchTool({
   name: "web_search",
   label: "Web Search",
   description:
@@ -90,25 +103,9 @@ const webSearchTool = defineTool({
     "Prefer web_search when the user asks a factual question that requires current knowledge.",
     "The search supports multiple engines simultaneously -- results are aggregated.",
   ],
-  parameters: searchParams,
-
-  async execute(_toolCallId, params) {
-    const { query } = coerceQueryParams(params);
-    const page = params.page ?? 1;
-    const { results, totalEstimated } = await webSearch({ query, page });
-    const formatted = formatResults(query, results, totalEstimated, page);
-    return {
-      content: [{ type: "text", text: formatted }],
-      details: { resultCount: results.length, totalEstimated, page },
-    };
-  },
-
-  renderResult(result, _options, _theme) {
-    return renderSearchResult(result, 6);
-  },
 });
 
-const webNewsSearchTool = defineTool({
+const webNewsSearchTool = createSearchTool({
   name: "web_news_search",
   label: "Web News Search",
   description:
@@ -118,25 +115,10 @@ const webNewsSearchTool = defineTool({
   promptGuidelines: [
     "Use this when the user asks about recent events, breaking news, or current affairs.",
   ],
-  parameters: newsSearchParams,
-
-  async execute(_toolCallId, params) {
-    const { query } = coerceQueryParams(params);
-    const page = params.page ?? 1;
-    const { results, totalEstimated } = await webSearch({ query, categories: "news", page });
-    const formatted = formatResults(query, results, totalEstimated, page);
-    return {
-      content: [{ type: "text", text: formatted }],
-      details: { resultCount: results.length, totalEstimated, page },
-    };
-  },
-
-  renderResult(result, _options, _theme) {
-    return renderSearchResult(result, 6);
-  },
+  categories: "news",
 });
 
-const webImageSearchTool = defineTool({
+const webImageSearchTool = createSearchTool({
   name: "web_image_search",
   label: "Web Image Search",
   description:
@@ -146,25 +128,8 @@ const webImageSearchTool = defineTool({
   promptGuidelines: [
     "Use this when the user asks for pictures, photos, diagrams, or any visual content.",
   ],
-  parameters: imageSearchParams,
-
-  async execute(_toolCallId, params) {
-    const { query } = coerceQueryParams(params);
-    const page = params.page ?? 1;
-    const { results, totalEstimated } = await webSearch(
-      { query, categories: "images", page },
-      { timeoutMs: SEARCH_TIMEOUT_MS },
-    );
-    const formatted = formatImageResults(query, results, page);
-    return {
-      content: [{ type: "text", text: formatted }],
-      details: { resultCount: results.length },
-    };
-  },
-
-  renderResult(result, _options, _theme) {
-    return renderSearchResult(result, 8);
-  },
+  categories: "images",
+  maxLines: 8,
 });
 
 // ---------------------------------------------------------------------------

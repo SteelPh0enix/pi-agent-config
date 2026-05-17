@@ -14,6 +14,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import {
+  createIdleStats,
   parseLine,
   parseBatch,
   processEvents,
@@ -838,7 +839,7 @@ describe("renderDashboard", () => {
 
 describe("renderFooterStatus", () => {
   it("shows idle status", () => {
-    const stats: Parameters<typeof renderDashboard>[0] = createIdleStatsForFooter();
+    const stats = createIdleStats();
     const status = renderFooterStatus(stats);
     expect(status).toContain("idle");
   });
@@ -989,24 +990,7 @@ describe("renderFooterStatus", () => {
   });
 });
 
-function createIdleStatsForFooter(): Parameters<typeof renderDashboard>[0] {
-  return {
-    phase: RequestPhase.IDLE,
-    taskId: null,
-    promptTokensTotal: null,
-    promptTokensSeen: 0,
-    promptSpeed: 0,
-    promptElapsedMs: 0,
-    promptComplete: false,
-    generatedTokensTotal: 0,
-    generationSpeed: 0,
-    generationStartTime: null,
-    generationComplete: false,
-    finalSummary: null,
-    totalStartTime: null,
-    totalElapsedMs: 0,
-  };
-}
+
 
 // ===========================================================================
 // 5. FIXTURE INTEGRATION — full lifecycle against real log data
@@ -1169,6 +1153,7 @@ describe("llm-monitor (extension)", () => {
     expect(formatSpeed).toBeDefined();
     expect(formatMs).toBeDefined();
     expect(progressBar).toBeDefined();
+    expect(createIdleStats).toBeDefined();
   });
 
   it("extension source uses lib exports (no duplicate parsing logic)", () => {

@@ -44,8 +44,8 @@ export const SEARCH_TIMEOUT_MS = 15_000;
  * page before slower-but-good engines (bing, mojeek) can respond.
  *
  * Engines intentionally excluded:
- *  - duckduckgo, brave: upstream CAPTCHA / rate-limit issues
- *  - google, qwant, startpage: upstream access denied
+ *  - brave: upstream CAPTCHA / rate-limit issues
+ *  - qwant, startpage: upstream access denied
  *  - openlibrary, wikibooks: fast but low-quality, crowd out good results
  *
  * Adjust this list as upstream engine availability changes.
@@ -204,4 +204,19 @@ export function formatImageResults(
     : `Showing top ${Math.min(results.length, 10)} of ${results.length} images.`;
 
   return `Image search results for "${query}"${pageLabel}:\n\n${items.join("\n\n")}\n\n${footer}`;
+}
+
+/** Coerce raw tool call args into a valid { query: string }. */
+export function coerceQueryParams(raw: unknown): { query: string } {
+  if (typeof raw === "string") return { query: raw.trim() };
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    // Try common key names the LLM might use
+    for (const key of ["query", "q"]) {
+      const val = o[key];
+      if (typeof val === "string" && val.trim()) return { query: val.trim() };
+    }
+  }
+  // Last resort — prevent undefined from leaking through
+  return { query: "" };
 }

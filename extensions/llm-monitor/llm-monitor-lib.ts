@@ -772,7 +772,34 @@ export function renderFooterStatus(
   return parts.join(" · ");
 }
 
-/** Parse the full test log fixture and run through state machine */
+/**
+ * Create an idle LLMStats object for dashboard rendering.
+ * Used by the extension to initialize/reset the display.
+ */
+export function createIdleStats(): LLMStats {
+  return {
+    phase: RequestPhase.IDLE,
+    taskId: null,
+    promptTokensTotal: null,
+    promptTokensSeen: 0,
+    promptSpeed: 0,
+    promptElapsedMs: 0,
+    promptComplete: false,
+    generatedTokensTotal: 0,
+    generationSpeed: 0,
+    generationStartTime: null,
+    generationComplete: false,
+    finalSummary: null,
+    totalStartTime: null,
+    totalElapsedMs: 0,
+  };
+}
+
+/**
+ * Parse the full test log fixture and run through state machine.
+ * Exported for use in tests — replays raw log lines through the parser
+ * and state machine, then derives final stats.
+ */
 export function processLogFixture(lines: string[]): LLMStats {
   let state = createEmptyState();
   for (const line of lines) {

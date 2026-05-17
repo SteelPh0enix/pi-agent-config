@@ -356,6 +356,22 @@ export function formatTextResult(
 // Utilities
 // ---------------------------------------------------------------------------
 
+/** Coerce raw tool call args into { url: string; offset?: number }. */
+export function coerceUrlParams(raw: unknown): { url: string; offset?: number } {
+  if (typeof raw === "string") return { url: raw.trim() };
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    for (const key of ["url", "URL", "uri"]) {
+      const val = o[key];
+      if (typeof val === "string" && val.trim()) {
+        const offset = typeof o.offset === "number" ? o.offset : undefined;
+        return { url: val.trim(), offset };
+      }
+    }
+  }
+  return { url: "" };
+}
+
 /** Format byte count as human-readable string. */
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

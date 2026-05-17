@@ -18,6 +18,7 @@ import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import {
+  coerceUrlParams,
   fetchPage,
   formatHtmlResult,
   formatTextResult,
@@ -38,21 +39,7 @@ const fetchParams = Type.Object({
   ),
 });
 
-/** Coerce raw tool call args into { url: string; offset?: number }. */
-function coerceUrlParams(raw: unknown): { url: string; offset?: number } {
-  if (typeof raw === "string") return { url: raw.trim() };
-  if (raw && typeof raw === "object") {
-    const o = raw as Record<string, unknown>;
-    for (const key of ["url", "URL", "uri"]) {
-      const val = o[key];
-      if (typeof val === "string" && val.trim()) {
-        const offset = typeof o.offset === "number" ? o.offset : undefined;
-        return { url: val.trim(), offset };
-      }
-    }
-  }
-  return { url: "" };
-}
+
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -92,16 +79,8 @@ const fetchPageTool = defineTool({
     };
   },
 
-  renderResult(result, _options, theme) {
-    let text = "";
-    if (result.content && result.content.length > 0) {
-      const firstContent = result.content[0];
-      text = firstContent.type === "text" ? firstContent.text : String(firstContent);
-    }
-
-    // Show only the header + first few lines
-    const lines = text.split("\n").slice(0, 6);
-    return new Text(lines.join("\n"), 0, 0);
+  renderResult(result, _options, _theme) {
+    return renderFetchResult(result, 6);
   },
 });
 
@@ -143,18 +122,25 @@ const fetchTextTool = defineTool({
     };
   },
 
-  renderResult(result, _options, theme) {
-    let text = "";
-    if (result.content && result.content.length > 0) {
-      const firstContent = result.content[0];
-      text = firstContent.type === "text" ? firstContent.text : String(firstContent);
-    }
-
-    // Show first ~8 lines of extracted text for the TUI preview
-    const lines = text.split("\n").slice(0, 8);
-    return new Text(lines.join("\n"), 0, 0);
+  renderResult(result, _options, _theme) {
+    return renderFetchResult(result, 8);
   },
 });
+
+/** Shared renderResult: shows first N lines of text output in the TUI. */
+function renderFetchResult(
+  result: { content?: Array<{ type: string; text?: string }> },
+  maxLines = 6,
+) {
+  let text = "";
+  if (result.content && result.content.length > 0) {
+    const firstContent = result.content[0];
+    text = firstContent.type === "text" ? firstContent.text : String(firstContent);
+  }
+
+  const lines = text.split("\n").slice(0, maxLines);
+  return new Text(lines.join("\n"), 0, 0);
+}
 
 // ---------------------------------------------------------------------------
 // Extension entry point

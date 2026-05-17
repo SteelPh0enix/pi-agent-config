@@ -12,6 +12,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import {
+  coerceUrlParams,
   htmlToText,
   extractTitle,
   normalizeUrl,
@@ -663,26 +664,10 @@ describe("fetch-page (extension)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7a. Library — coerceUrlParams (from index.ts)
+// 7a. Library — coerceUrlParams (from fetch-page-lib.ts)
 // ---------------------------------------------------------------------------
 
-describe("coerceUrlParams (extension helper)", () => {
-  // Re-implement the same logic to test it independently
-  function coerceUrlParams(raw: unknown): { url: string; offset?: number } {
-    if (typeof raw === "string") return { url: raw.trim() };
-    if (raw && typeof raw === "object") {
-      const o = raw as Record<string, unknown>;
-      for (const key of ["url", "URL", "uri"]) {
-        const val = o[key];
-        if (typeof val === "string" && val.trim()) {
-          const offset = typeof o.offset === "number" ? o.offset : undefined;
-          return { url: val.trim(), offset };
-        }
-      }
-    }
-    return { url: "" };
-  }
-
+describe("coerceUrlParams (lib helper)", () => {
   it("coerces a plain string into { url }", () => {
     expect(coerceUrlParams("https://example.com")).toEqual({ url: "https://example.com" });
   });
@@ -995,11 +980,11 @@ describe("fetchPage (abort/error edge cases)", () => {
 // ---------------------------------------------------------------------------
 
 describe("fetch-page (extension, additional)", () => {
-  it("exports coerceUrlParams indirectly via tool execution", () => {
+  it("imports coerceUrlParams from lib and uses it in both tools", () => {
     const src = readExtensionFile("fetch-page/index.ts");
     expect(src).toContain("coerceUrlParams");
     const coerceUsages = (src.match(/coerceUrlParams/g) || []).length;
-    expect(coerceUsages).toBeGreaterThanOrEqual(3); // definition + 2 usages in tool execute
+    expect(coerceUsages).toBeGreaterThanOrEqual(3); // import + 2 usages in tool execute
   });
 
   it("defines fetch-check command", () => {

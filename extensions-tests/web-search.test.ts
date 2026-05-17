@@ -5,7 +5,7 @@
  *   1. Library — formatResults unit tests
  *   2. Library — formatImageResults unit tests
  *   3. Library — webSearch (mocked fetch) URL construction + error handling
- *   4. Library — coerceQueryParams (re-implemented for testing)
+ *   4. Library — coerceQueryParams (from search-lib.ts)
  *   5. Extension — tool registration & source checks
  *   6. Library — search-lib.ts error message verification
  *   7. Integration — real search calls against live backend
@@ -23,6 +23,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 import {
+  coerceQueryParams,
   formatResults,
   formatImageResults,
   webSearch,
@@ -515,23 +516,10 @@ describe("webSearch (mocked)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. Library — coerceQueryParams (re-implemented for testing)
+// 4. Library — coerceQueryParams (from search-lib.ts)
 // ---------------------------------------------------------------------------
 
-describe("coerceQueryParams (extension helper)", () => {
-  // Re-implement to test independently (avoid importing Pi runtime types)
-  function coerceQueryParams(raw: unknown): { query: string } {
-    if (typeof raw === "string") return { query: raw.trim() };
-    if (raw && typeof raw === "object") {
-      const o = raw as Record<string, unknown>;
-      for (const key of ["query", "q"]) {
-        const val = o[key];
-        if (typeof val === "string" && val.trim()) return { query: val.trim() };
-      }
-    }
-    return { query: "" };
-  }
-
+describe("coerceQueryParams (lib helper)", () => {
   it("coerces a plain string into { query }", () => {
     expect(coerceQueryParams("hello world")).toEqual({ query: "hello world" });
   });
@@ -622,14 +610,16 @@ describe("web-search (extension)", () => {
     expect(src).not.toMatch(/SearXNG.*extension loaded/i);
   });
 
-  it("has renderSearchResult helper called by all tools", () => {
+  it("has renderSearchResult helper used by tool factory", () => {
     const src = readExtensionFile("web-search/index.ts");
-    const callCount = (src.match(/renderSearchResult\(/g) || []).length;
-    expect(callCount).toBeGreaterThanOrEqual(3);
+    expect(src).toContain("renderSearchResult");
+    expect(src).toContain("createSearchTool");
   });
 
-  it("exports coerceQueryParams for testability", () => {
-    expect(readExtensionFile("web-search/index.ts")).toContain("export function coerceQueryParams");
+  it("imports coerceQueryParams from lib module", () => {
+    const src = readExtensionFile("web-search/index.ts");
+    expect(src).toContain("coerceQueryParams");
+    expect(src).toContain('from "./search-lib"');
   });
 });
 

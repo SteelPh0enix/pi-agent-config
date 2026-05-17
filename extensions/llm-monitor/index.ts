@@ -9,13 +9,16 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { spawn } from "child_process";
 import {
+  createIdleStats,
+  deriveStats,
   parseLine,
   processEvents,
-  deriveStats,
+  renderDashboard,
+  renderFooterStatus,
   RequestPhase,
 } from "./llm-monitor-lib.js";
-import { renderDashboard, renderFooterStatus } from "./llm-monitor-lib.js";
 
 // ─── Configuration ──────────────────────────────────────────
 
@@ -28,7 +31,7 @@ const UPDATE_INTERVAL_MS = 300;
 
 let requestState: ReturnType<typeof processEvents> | null = null;
 let updateInterval: ReturnType<typeof setInterval> | null = null;
-let logProcess: ReturnType<ChildProcess["kill"]> = null as any;
+let logProcess: ReturnType<typeof spawn> | null = null;
 
 // ─── Log Stream Management ──────────────────────────────────
 
@@ -82,7 +85,7 @@ function stopLogStream(): void {
   if (updateInterval) {
     clearInterval(updateInterval);
   }
-  logProcess = null as any;
+  logProcess = null;
   updateInterval = null;
 }
 
@@ -135,28 +138,7 @@ function updateUI(ctx: ExtensionContext): void {
   ctx.ui.setStatus(FOOTER_ID, renderFooterStatus(stats, safeTheme));
 }
 
-function createIdleStats() {
-  return {
-    phase: RequestPhase.IDLE,
-    taskId: null,
-    promptTokensTotal: null,
-    promptTokensSeen: 0,
-    promptSpeed: 0,
-    promptElapsedMs: 0,
-    promptComplete: false,
-    generatedTokensTotal: 0,
-    generationSpeed: 0,
-    generationStartTime: null,
-    generationComplete: false,
-    finalSummary: null,
-    totalStartTime: null,
-    totalElapsedMs: 0,
-  };
-}
 
-// ─── Child Process import (inline require to avoid ESM issue) ─
-
-import { spawn } from "child_process";
 
 // ─── Extension Entry Point ──────────────────────────────────
 
