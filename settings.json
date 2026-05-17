@@ -16,5 +16,5 @@
   },
   "transport": "auto",
   "treeFilterMode": "default",
-  "defaultModel": "coder-reasoning"
+  "defaultModel": "coder"
 }
