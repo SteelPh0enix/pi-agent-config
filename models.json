@@ -79,6 +79,74 @@
                         "cacheRead": 0,
                         "cacheWrite": 0
                     }
+                },
+                {
+                    "id": "gemma-4-dense",
+                    "name": "Gemma 4 Dense (no reasoning)",
+                    "reasoning": false,
+                    "input": [
+                        "text",
+                        "image"
+                    ],
+                    "contextWindow": 262144,
+                    "maxTokens": 32768,
+                    "cost": {
+                        "input": 0,
+                        "output": 0,
+                        "cacheRead": 0,
+                        "cacheWrite": 0
+                    }
+                },
+                {
+                    "id": "gemma-4-moe",
+                    "name": "Gemma 4 MoE (no reasoning)",
+                    "reasoning": false,
+                    "input": [
+                        "text",
+                        "image"
+                    ],
+                    "contextWindow": 262144,
+                    "maxTokens": 32768,
+                    "cost": {
+                        "input": 0,
+                        "output": 0,
+                        "cacheRead": 0,
+                        "cacheWrite": 0
+                    }
+                },
+                {
+                    "id": "gemma-4-dense-reasoning",
+                    "name": "Gemma 4 Dense (with reasoning)",
+                    "reasoning": true,
+                    "input": [
+                        "text",
+                        "image"
+                    ],
+                    "contextWindow": 262144,
+                    "maxTokens": 32768,
+                    "cost": {
+                        "input": 0,
+                        "output": 0,
+                        "cacheRead": 0,
+                        "cacheWrite": 0
+                    }
+                },
+                {
+                    "id": "gemma-4-moe-reasoning",
+                    "name": "Gemma 4 MoE (with reasoning)",
+                    "reasoning": true,
+                    "input": [
+                        "text",
+                        "image"
+                    ],
+                    "contextWindow": 262144,
+                    "maxTokens": 32768,
+                    "cost": {
+                        "input": 0,
+                        "output": 0,
+                        "cacheRead": 0,
+                        "cacheWrite": 0
+                    }
                 }
             ]
         }
