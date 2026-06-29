@@ -11,5 +11,3 @@ If you find any other code-related issue, report it and ask if you should fix it
 
 AFTER PERFORMING FIXES: If files that you edited have copyright headers that contain date from previous year, update the copyright headers in the modified files to contain current year.
 Old copyright year in a header of a file that was not modified is NOT an issue and should not be reported.
-
-Use ripgrep (rg) instead of GNU grep, and fd (fdfind) instead of GNU find.
