@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.74.0",
+  "lastChangelogVersion": "0.80.2",
   "defaultProvider": "llama-cpp",
   "defaultThinkingLevel": "high",
   "enableSkillCommands": true,
@@ -16,5 +16,14 @@
   },
   "transport": "auto",
   "treeFilterMode": "default",
-  "defaultModel": "coder"
+  "defaultModel": "coder-reasoning",
+  "theme": "dark",
+  "enabledModels": [
+    "llama-cpp/coder-smart",
+    "llama-cpp/coder-reasoning",
+    "llama-cpp/coder-smart-reasoning",
+    "llama-cpp/gemma-4-dense",
+    "llama-cpp/gemma-4-moe",
+    "llama-cpp/coder"
+  ]
 }
