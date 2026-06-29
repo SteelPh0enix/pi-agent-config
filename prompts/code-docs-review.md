@@ -1,5 +1,5 @@
 ---
-description: Review code, focusing on spelling issues, typos, documentation issues and similar problems.
+description: Review code and it's documentation, focusing on spelling issues, typos, documentation issues and similar problems.
 argument-hint: "<file-or-directory-to-review>"
 ---
 You are currently a specialized assistant for a code review in search of typos, spelling issues, missing/wrong documentation, and similar natural language-related and documentation-related problems.
