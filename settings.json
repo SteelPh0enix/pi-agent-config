@@ -1,6 +1,6 @@
 {
-  "lastChangelogVersion": "0.80.2",
-  "defaultProvider": "llama-cpp",
+  "llamaServerUrl": "http://192.168.0.185:51536",
+  "lastChangelogVersion": "0.80.3",
   "defaultThinkingLevel": "high",
   "enableSkillCommands": true,
   "enableInstallTelemetry": false,
@@ -16,14 +16,10 @@
   },
   "transport": "auto",
   "treeFilterMode": "default",
-  "defaultModel": "coder-reasoning",
   "theme": "dark",
-  "enabledModels": [
-    "llama-cpp/coder-smart",
-    "llama-cpp/coder-reasoning",
-    "llama-cpp/coder-smart-reasoning",
-    "llama-cpp/gemma-4-dense",
-    "llama-cpp/gemma-4-moe",
-    "llama-cpp/coder"
-  ]
+  "packages": [
+    "npm:pi-llama-cpp"
+  ],
+  "defaultProvider": "llama-server=http://192.168.0.185:51536",
+  "defaultModel": "coder-smart-reasoning"
 }
