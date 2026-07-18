@@ -23,5 +23,6 @@
     "npm:@mjakl/pi-kagi-api",
     "npm:@hypabolic/crossbar"
   ],
-  "defaultModel": "coder-smart-reasoning"
+  "defaultModel": "coder-smart-reasoning",
+  "defaultProvider": "crossbar-llamacpp-steelph0enix-framework-51536"
 }
