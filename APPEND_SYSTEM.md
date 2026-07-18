@@ -1,1 +1,2 @@
-ALWAYS fact-check/ground your research with web search tool, unless you are absolutely sure that what you're saying is correct and true
+Prefer using `fff` plug-in instead of default find/grep.
+Always ground your research with Kagi extension.
