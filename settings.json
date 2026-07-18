@@ -1,6 +1,6 @@
 {
   "llamaServerUrl": "http://192.168.0.185:51536",
-  "lastChangelogVersion": "0.80.3",
+  "lastChangelogVersion": "0.80.8",
   "defaultThinkingLevel": "high",
   "enableSkillCommands": true,
   "enableInstallTelemetry": false,
@@ -18,7 +18,11 @@
   "treeFilterMode": "default",
   "theme": "dark",
   "packages": [
-    "npm:pi-llama-cpp"
+    "npm:pi-llama-cpp",
+    "npm:context-mode",
+    "npm:pi-lens",
+    "npm:@ff-labs/pi-fff",
+    "npm:@mjakl/pi-kagi-api"
   ],
   "defaultProvider": "llama-server=http://192.168.0.185:51536",
   "defaultModel": "coder-smart-reasoning"
