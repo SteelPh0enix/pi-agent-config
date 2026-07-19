@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.80.8",
+  "lastChangelogVersion": "0.80.10",
   "defaultThinkingLevel": "high",
   "enableSkillCommands": true,
   "enableInstallTelemetry": false,
@@ -19,8 +19,10 @@
   "packages": [
     "npm:context-mode",
     "npm:@ff-labs/pi-fff",
-    "npm:@mjakl/pi-kagi-api"
+    "npm:@mjakl/pi-kagi-api",
+    "npm:pi-llama-cpp"
   ],
-  "defaultModel": "coder-smart-reasoning",
-  "defaultProvider": "crossbar-llamacpp-steelph0enix-framework-51536"
+  "llamaServerUrl": "http://192.168.0.185:51536",
+  "defaultProvider": "llama-server=http://192.168.0.185:51536",
+  "defaultModel": "coder-reasoning"
 }
