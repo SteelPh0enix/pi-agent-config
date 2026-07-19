@@ -18,10 +18,8 @@
   "theme": "dark",
   "packages": [
     "npm:context-mode",
-    "npm:pi-lens",
     "npm:@ff-labs/pi-fff",
-    "npm:@mjakl/pi-kagi-api",
-    "npm:@hypabolic/crossbar"
+    "npm:@mjakl/pi-kagi-api"
   ],
   "defaultModel": "coder-smart-reasoning",
   "defaultProvider": "crossbar-llamacpp-steelph0enix-framework-51536"
