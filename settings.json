@@ -20,7 +20,8 @@
     "npm:context-mode",
     "npm:@ff-labs/pi-fff",
     "npm:@mjakl/pi-kagi-api",
-    "npm:pi-llama-cpp"
+    "npm:pi-llama-cpp",
+    "npm:pi-subagents"
   ],
   "llamaServerUrl": "http://192.168.0.185:51536",
   "defaultProvider": "llama-server=http://192.168.0.185:51536",
