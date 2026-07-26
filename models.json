@@ -1,9 +1,0 @@
-{
-    "providers": {
-        "llama-cpp": {
-            "baseUrl": "http://steelph0enix.framework:51536/v1",
-            "api": "openai-completions",
-            "apiKey": "none"
-        }
-    }
-}
