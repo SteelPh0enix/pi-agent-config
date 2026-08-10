@@ -4,3 +4,5 @@ node_modules/
 coverage/
 kagi-api.json
 crossbar.json
+worktrees/
+run-history.jsonl

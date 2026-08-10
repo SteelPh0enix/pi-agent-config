@@ -25,5 +25,5 @@
   ],
   "llamaServerUrl": "http://192.168.0.185:51536",
   "defaultProvider": "llama-server=http://192.168.0.185:51536",
-  "defaultModel": "laguna"
+  "defaultModel": "kat-coder-reasoning"
 }
