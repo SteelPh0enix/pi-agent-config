@@ -20,6 +20,7 @@
     "npm:context-mode",
     "npm:@ff-labs/pi-fff",
     "npm:@mjakl/pi-kagi-api",
-    "npm:pi-subagents"
+    "npm:pi-subagents",
+    "git:github.com/huggingface/pi-llama"
   ]
 }
