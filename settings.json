@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.84.2",
+  "lastChangelogVersion": "0.84.3",
   "defaultThinkingLevel": "high",
   "enableSkillCommands": true,
   "enableInstallTelemetry": false,
@@ -22,5 +22,7 @@
     "npm:@mjakl/pi-kagi-api",
     "npm:pi-subagents",
     "git:github.com/huggingface/pi-llama"
-  ]
+  ],
+  "defaultProvider": "llama-cpp",
+  "defaultModel": "qwen-dense-reasoning-high"
 }
