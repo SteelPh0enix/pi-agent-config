@@ -20,9 +20,6 @@
     "npm:context-mode",
     "npm:@ff-labs/pi-fff",
     "npm:@mjakl/pi-kagi-api",
-    "npm:pi-subagents",
-    "git:github.com/huggingface/pi-llama"
-  ],
-  "defaultProvider": "llama-cpp",
-  "defaultModel": "qwen-dense-reasoning-high"
+    "npm:pi-subagents"
+  ]
 }
