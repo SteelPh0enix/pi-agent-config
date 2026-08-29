@@ -7,3 +7,4 @@ crossbar.json
 worktrees/
 run-history.jsonl
 trust.json
+models-store.json
