@@ -19,5 +19,7 @@
   "packages": [
     "npm:@ff-labs/pi-fff",
     "npm:@mjakl/pi-kagi-api"
-  ]
+  ],
+  "defaultProvider": "llama.cpp",
+  "defaultModel": "qwen-next"
 }
