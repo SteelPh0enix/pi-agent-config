@@ -17,9 +17,7 @@
   "treeFilterMode": "default",
   "theme": "dark",
   "packages": [
-    "npm:context-mode",
     "npm:@ff-labs/pi-fff",
-    "npm:@mjakl/pi-kagi-api",
-    "npm:pi-subagents"
+    "npm:@mjakl/pi-kagi-api"
   ]
 }
