@@ -15,7 +15,7 @@
   },
   "transport": "auto",
   "treeFilterMode": "default",
-  "theme": "dark",
+  "theme": "noctalia",
   "packages": [
     "npm:@ff-labs/pi-fff",
     "npm:@mjakl/pi-kagi-api"
