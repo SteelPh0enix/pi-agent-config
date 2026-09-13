@@ -11,7 +11,8 @@
     }
   },
   "terminal": {
-    "showTerminalProgress": true
+    "showTerminalProgress": true,
+    "trueColor": true
   },
   "transport": "auto",
   "treeFilterMode": "default",
