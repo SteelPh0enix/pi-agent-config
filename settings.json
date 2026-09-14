@@ -21,6 +21,6 @@
     "npm:@ff-labs/pi-fff",
     "npm:@mjakl/pi-kagi-api"
   ],
-  "defaultProvider": "llama.cpp",
-  "defaultModel": "qwen-next"
+  "defaultProvider": "qwen-next",
+  "defaultModel": "/models/Qwen3.8-Flash-Next-IQ4_NL-PROJFIX-00001-of-00009.gguf"
 }

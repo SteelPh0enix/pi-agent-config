@@ -1,0 +1,23 @@
+{
+  "providers": {
+    "qwen-next": {
+      "baseUrl": "http://steelph0enix.framework:33333/v1",
+      "api": "openai-completions",
+      "apiKey": "none",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "thinkingFormat": "qwen-chat-template"
+      },
+      "models": [
+        {
+          "id": "/models/Qwen3.8-Flash-Next-IQ4_NL-PROJFIX-00001-of-00009.gguf",
+          "name": "qwen-next",
+          "reasoning": true,
+          "contextWindow": 262144,
+          "maxTokens": 32768
+        }
+      ]
+    }
+  }
+}
