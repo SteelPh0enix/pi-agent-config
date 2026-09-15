@@ -22,5 +22,5 @@
     "npm:@mjakl/pi-kagi-api"
   ],
   "defaultProvider": "qwen-next",
-  "defaultModel": "/models/Qwen3.8-Flash-Next-IQ4_NL-PROJFIX-00001-of-00009.gguf"
+  "defaultModel": "Qwen 3.8 Flash Next"
 }

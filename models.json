@@ -11,7 +11,7 @@
       },
       "models": [
         {
-          "id": "/models/Qwen3.8-Flash-Next-IQ4_NL-PROJFIX-00001-of-00009.gguf",
+          "id": "Qwen 3.8 Flash Next",
           "name": "qwen-next",
           "reasoning": true,
           "contextWindow": 262144,
