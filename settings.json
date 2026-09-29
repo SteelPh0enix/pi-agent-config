@@ -18,8 +18,7 @@
   "treeFilterMode": "default",
   "theme": "noctalia",
   "packages": [
-    "npm:@ff-labs/pi-fff",
-    "npm:@mjakl/pi-kagi-api"
+    "npm:@ff-labs/pi-fff"
   ],
   "defaultProvider": "qwen-next",
   "defaultModel": "Qwen 3.8 Flash Next"
