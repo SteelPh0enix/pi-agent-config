@@ -129,7 +129,7 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       "Use web_search when current web information would help answer the user's request.",
       "web_search returns one page of up to 10 results per call; page through with the page parameter instead of rephrasing the query.",
-      "web_search gives snippets only; fetch a page body with bash and curl.",
+      "web_search gives snippets only; fetch page bodies with web_fetch (never bash and curl).",
     ],
     parameters: Type.Object({
       query: Type.String({ description: "Search query" }),
